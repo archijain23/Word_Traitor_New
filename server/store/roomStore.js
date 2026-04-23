@@ -5,12 +5,17 @@ function createRoom(roomId, hostId, name) {
     roomId,
     hostId,
     status: "waiting",
+
     players: {
       [hostId]: {
         id: hostId,
         name,
       },
     },
+
+    votes: {},
+    hasVoted: {},
+    traitorId: null,
   };
 }
 
@@ -19,13 +24,13 @@ function joinRoom(roomId, socketId, name) {
   if (!room) return null;
 
   console.log("BEFORE JOIN:", room.players);
-  // 🔥 IMPORTANT: Add player correctly
+
   room.players[socketId] = {
     id: socketId,
     name,
   };
 
-    console.log("AFTER JOIN:", room.players);
+  console.log("AFTER JOIN:", room.players);
 
   return room;
 }
@@ -45,9 +50,26 @@ function removePlayer(roomId, playerId) {
   }
 }
 
+// 🗳️ ADD VOTE
+function addVote(roomId, voterId, targetId) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  if (room.hasVoted[voterId]) return;
+
+  room.hasVoted[voterId] = true;
+
+  if (!room.votes[targetId]) {
+    room.votes[targetId] = 0;
+  }
+
+  room.votes[targetId]++;
+}
+
 module.exports = {
   createRoom,
   joinRoom,
   getRoom,
   removePlayer,
+  addVote,
 };
