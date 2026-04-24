@@ -22,6 +22,6 @@ io.on("connection", (socket) => {
   roomHandler(io, socket);
 });
 
-server.listen(5000, () => {
-  console.log("Server running on port 5000");
+server.listen(5001, () => {
+  console.log("Server running on port 5001");
 });

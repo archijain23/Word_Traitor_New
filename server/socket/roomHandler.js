@@ -4,16 +4,25 @@ const {
   getRoom,
   removePlayer,
   addVote,
+  addHint,
+  resetRound,
 } = require("../store/roomStore");
 
 module.exports = (io, socket) => {
   let currentRoom = null;
 
-  const wordPairs = [
+  const standardWordPairs = [
     ["Apple", "Orange"],
     ["Dog", "Wolf"],
     ["Car", "Bike"],
     ["Ocean", "River"],
+  ];
+  const adultWordPairs = [
+    ["Lingerie", "Bikini"],
+    ["Hookup", "Date"],
+    ["Condom", "Birth Control"],
+    ["Champagne", "Tequila"],
+    ["Strip Club", "Nightclub"],
   ];
 
   // 🎯 START GAME
@@ -22,37 +31,69 @@ module.exports = (io, socket) => {
     if (!room) return;
 
     const players = Object.values(room.players);
+    const numTraitors = room.config?.numTraitors || 1;
 
     if (players.length < 2) {
       console.log("Not enough players");
       return;
     }
 
-    // 🎯 pick traitor
-    const traitorIndex = Math.floor(Math.random() * players.length);
-    const traitor = players[traitorIndex];
-    room.traitorId = traitor.id;
+    // 🎯 pick traitors (can be multiple)
+    room.traitorIds = [];
+    const selectedIndexes = new Set();
+    
+    while (room.traitorIds.length < Math.min(numTraitors, players.length - 1)) {
+      const idx = Math.floor(Math.random() * players.length);
+      if (!selectedIndexes.has(idx)) {
+        selectedIndexes.add(idx);
+        room.traitorIds.push(players[idx].id);
+      }
+    }
+    
+    room.traitorId = room.traitorIds[0]; // Keep for backward compatibility
 
-    // 🎯 pick word pair
+    // 🎯 pick word pair based on room configuration
+    const use18Plus = room.config?.use18Plus;
+    const availableWordPairs = use18Plus
+      ? [...standardWordPairs, ...adultWordPairs]
+      : standardWordPairs;
     const [wordA, wordB] =
-      wordPairs[Math.floor(Math.random() * wordPairs.length)];
+      availableWordPairs[Math.floor(Math.random() * availableWordPairs.length)];
 
-    players.forEach((player) => {
-      const isTraitor = player.id === room.traitorId;
-      const assignedWord = isTraitor ? wordB : wordA;
+    console.log(
+      `Starting room ${roomId} with ${use18Plus ? "18+" : "standard"} word pool`
+    );
 
-      io.to(player.id).emit("game_started", {
-        word: assignedWord,
-      });
-    });
+   players.forEach((player) => {
+  const isTraitor = room.traitorIds.includes(player.id);
 
-    // ✅ reset voting every game
-    room.votes = {};
-    room.hasVoted = {};
+  const assignedWord = isTraitor ? wordB : wordA;
+
+  // ✅ store word on player
+  room.players[player.id].word = assignedWord;
+
+  console.log(`Player ${player.name} (${player.id}) is ${isTraitor ? 'TRAITOR' : 'CITIZEN'} - assigned word: ${assignedWord}`);
+
+  io.to(player.id).emit("game_started", {
+    word: assignedWord,
+  });
+});
+
+    // ✅ reset round data
+    resetRound(roomId);
 
     room.status = "playing";
+    room.currentPhase = "word_assignment";
 
     io.to(roomId).emit("room_updated", room);
+
+    // ⏰ Start hint collection phase after a delay (using hintTime config)
+    const wordAssignmentTime = 30000; // Always 30 seconds to memorize
+    setTimeout(() => {
+      room.currentPhase = "hint_collection";
+      io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
+      io.to(roomId).emit("room_updated", room);
+    }, wordAssignmentTime);
   };
 
   // 🗳️ END VOTING
@@ -75,14 +116,14 @@ module.exports = (io, socket) => {
     const eliminatedPlayer =
       candidates[Math.floor(Math.random() * candidates.length)];
 
-    const wasTraitor = eliminatedPlayer === room.traitorId;
+    const wasTraitor = room.traitorIds.includes(eliminatedPlayer);
 
     // remove player
     delete room.players[eliminatedPlayer];
-
-    // reset votes
-    room.votes = {};
-    room.hasVoted = {};
+    room.lastEliminated = {
+      playerId: eliminatedPlayer,
+      wasTraitor,
+    };
 
     // 🎯 RESULT EVENT
     io.to(roomId).emit("player_eliminated", {
@@ -90,10 +131,21 @@ module.exports = (io, socket) => {
       wasTraitor,
     });
 
+    room.currentPhase = "round_result";
+    io.to(roomId).emit("phase_changed", {
+      phase: "round_result",
+      eliminatedPlayer,
+      wasTraitor,
+    });
+    io.to(roomId).emit("room_updated", room);
+
     // 🏆 WIN CONDITIONS
     if (wasTraitor) {
       room.status = "game_over";
+      room.currentPhase = "game_over";
+      room.winner = "civilians";
 
+      io.to(roomId).emit("room_updated", room);
       io.to(roomId).emit("game_over", {
         winner: "civilians",
       });
@@ -104,17 +156,52 @@ module.exports = (io, socket) => {
 
     if (remainingPlayers <= 2) {
       room.status = "game_over";
+      room.currentPhase = "game_over";
+      room.winner = "traitor";
 
+      io.to(roomId).emit("room_updated", room);
       io.to(roomId).emit("game_over", {
         winner: "traitor",
       });
       return;
     }
 
-    // continue next round
-    room.status = "playing";
+  };
 
+  // 🔄 START NEXT ROUND
+  const startNextRound = (roomId) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    // Reset round data
+    resetRound(roomId);
+    room.lastEliminated = null;
+
+    room.status = "playing";
+    room.currentPhase = "hint_collection";
+
+    io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
     io.to(roomId).emit("room_updated", room);
+  };
+
+  // 💡 END HINT COLLECTION
+  const endHintCollection = (roomId) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    const totalPlayers = Object.keys(room.players).length;
+    const totalHints = Object.keys(room.hints).length;
+
+    if (totalHints === totalPlayers) {
+      // All hints collected, show them and start voting together
+      room.currentPhase = "voting";
+
+      io.to(roomId).emit("phase_changed", {
+        phase: "voting",
+        hints: room.hints,
+      });
+      io.to(roomId).emit("room_updated", room);
+    }
   };
 
   // ✅ CREATE ROOM
@@ -142,8 +229,30 @@ module.exports = (io, socket) => {
     io.to(roomId).emit("room_updated", room);
   });
 
+  // ⬅️ LEAVE ROOM
+  socket.on("leave_room", ({ roomId }) => {
+    if (!roomId) return;
+
+    socket.leave(roomId);
+    removePlayer(roomId, socket.id);
+
+    if (currentRoom === roomId) {
+      currentRoom = null;
+    }
+
+    const room = getRoom(roomId);
+
+    if (room) {
+      io.to(roomId).emit("room_updated", room);
+    }
+  });
+
   // ✅ START GAME
-  socket.on("start_game", ({ roomId }) => {
+  socket.on("start_game", ({ roomId, config }) => {
+    const room = getRoom(roomId);
+    if (room && config) {
+      room.config = config;
+    }
     startGame(roomId);
   });
 
@@ -165,6 +274,30 @@ module.exports = (io, socket) => {
     if (totalVotes === totalPlayers) {
       endVoting(roomId);
     }
+  });
+
+  // 💡 SUBMIT HINT
+  socket.on("submit_hint", ({ roomId, hint }) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    if (room.currentPhase !== "hint_collection") return;
+
+    addHint(roomId, socket.id, hint);
+
+    io.to(roomId).emit("room_updated", room);
+
+    endHintCollection(roomId);
+  });
+
+  // ▶️ CONTINUE ROUND
+  socket.on("continue_round", ({ roomId }) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    if (room.currentPhase !== "round_result") return;
+
+    startNextRound(roomId);
   });
 
   // ❌ DISCONNECT

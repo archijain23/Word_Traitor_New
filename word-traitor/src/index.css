@@ -1,12 +1,50 @@
 @import "tailwindcss";
 
+html {
+  min-height: 100%;
+}
+
 html, body {
   height: 100%;
-  background: #09090b;
+  background:
+    radial-gradient(circle at top, rgba(0, 240, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 85% 15%, rgba(255, 34, 190, 0.16), transparent 22%),
+    radial-gradient(circle at 50% 100%, rgba(125, 85, 255, 0.18), transparent 26%),
+    linear-gradient(180deg, #060816 0%, #09091a 42%, #04050c 100%);
   color: white;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at center, black, transparent 80%);
+  opacity: 0.18;
+  z-index: -1;
+}
+
+#root {
+  min-height: 100vh;
 }
 
 /* Smooth UI feel */
 * {
+  box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(0, 240, 255, 0.28);
+  color: white;
 }
