@@ -4,14 +4,23 @@ import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Modal from "../components/ui/Modal";
-import { socket } from "../lib/socket";
+import { emitReconnectPlayer, socket } from "../lib/socket";
+import {
+  buildPlayerSession,
+  clearRememberedRoom,
+  getStoredPlayerName,
+  getStoredPlayerId,
+  rememberRoom,
+  setStoredPlayerName,
+} from "../lib/session";
 
 function Lobby() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const playerId = getStoredPlayerId();
 
-  const storedName = localStorage.getItem("playerName") || "";
+  const storedName = getStoredPlayerName();
   const hasJoinedThisRoom =
     sessionStorage.getItem(`joined-room-${roomId}`) === "true";
   const shouldSkipNamePrompt =
@@ -27,34 +36,77 @@ function Lobby() {
 
   // 🔌 Listen for updates
   useEffect(() => {
-    socket.on("room_updated", (roomData) => {
+    const applyRoomState = (roomData) => {
       setRoom(roomData);
 
       if (roomData.status === "playing") {
         navigate(`/game/${roomData.roomId}`);
       }
-    });
+    };
 
-    socket.on("error", (msg) => {
+    const handleRoomUpdated = (roomData) => {
+      applyRoomState(roomData);
+    };
+
+    const handleStateSync = (state) => {
+      applyRoomState(state.room);
+    };
+
+    const handleReconnectEvent = ({ room: syncedRoom }) => {
+      if (syncedRoom?.roomId === roomId) {
+        applyRoomState(syncedRoom);
+      }
+    };
+
+    socket.on("room_updated", handleRoomUpdated);
+    socket.on("STATE_SYNC", handleStateSync);
+    socket.on("PLAYER_RECONNECTED", handleReconnectEvent);
+    socket.on("PLAYER_DISCONNECTED", handleReconnectEvent);
+
+    const handleError = (msg) => {
+      clearRememberedRoom(roomId);
       alert(msg);
       navigate("/");
-    });
+    };
+
+    socket.on("error", handleError);
 
     return () => {
-      socket.off("room_updated");
-      socket.off("error");
+      socket.off("room_updated", handleRoomUpdated);
+      socket.off("STATE_SYNC", handleStateSync);
+      socket.off("PLAYER_RECONNECTED", handleReconnectEvent);
+      socket.off("PLAYER_DISCONNECTED", handleReconnectEvent);
+      socket.off("error", handleError);
     };
-  }, [navigate]);
+  }, [navigate, roomId]);
 
   // 🚀 Join room when name is ready
   useEffect(() => {
     if (showNameModal || !name) return;
 
+    const session = buildPlayerSession(name);
+    rememberRoom(roomId);
+
     socket.emit("join_room", {
       roomId,
       name,
+      playerId: session.playerId,
+      authToken: session.authToken,
     });
   }, [roomId, name, showNameModal]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+
+    const handleReconnect = () => {
+      emitReconnectPlayer(roomId);
+    };
+
+    socket.io.on("reconnect", handleReconnect);
+    return () => {
+      socket.io.off("reconnect", handleReconnect);
+    };
+  }, [roomId, playerId]);
 
   const handleJoin = () => {
     if (!name.trim()) {
@@ -62,7 +114,9 @@ function Lobby() {
       return;
     }
 
-    localStorage.setItem("playerName", name.trim());
+    setStoredPlayerName(name.trim());
+    buildPlayerSession(name.trim());
+    rememberRoom(roomId);
     sessionStorage.setItem(`joined-room-${roomId}`, "true");
     setShowNameModal(false);
   };
@@ -70,6 +124,7 @@ function Lobby() {
   const handleBackToHome = () => {
     socket.emit("leave_room", { roomId });
     sessionStorage.removeItem(`joined-room-${roomId}`);
+    clearRememberedRoom(roomId);
     navigate("/");
   };
 
@@ -103,7 +158,7 @@ function Lobby() {
     );
   }
 
-  const isHost = socket.id === room.hostId;
+  const isHost = playerId === room.hostId;
 
   return (
     <Layout>
@@ -251,7 +306,9 @@ function Lobby() {
                   <div key={p.id} className="rounded-3xl border border-white/6 bg-[linear-gradient(135deg,rgba(17,24,39,0.9),rgba(26,16,44,0.82))] p-4 flex items-center justify-between gap-4 shadow-[0_0_35px_rgba(34,211,238,0.06)]">
                     <div>
                       <p className="font-semibold text-white">{p.name}</p>
-                      <p className="text-xs text-zinc-500">{p.id === room.hostId ? "Host" : "Player"}</p>
+                      <p className="text-xs text-zinc-500">
+                        {p.id === room.hostId ? "Host" : "Player"} • {p.online ? "Online" : "Offline"}
+                      </p>
                     </div>
                     {p.id === room.hostId && (
                       <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">HOST</span>

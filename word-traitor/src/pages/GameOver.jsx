@@ -2,15 +2,24 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
-import { socket } from "../lib/socket";
+import { emitReconnectPlayer, socket } from "../lib/socket";
+import {
+  buildPlayerSession,
+  clearRememberedRoom,
+  getStoredPlayerId,
+  getStoredPlayerName,
+  rememberRoom,
+} from "../lib/session";
 
 function GameOver() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const [winner, setWinner] = useState(null);
   const [room, setRoom] = useState(null);
+  const [myRole, setMyRole] = useState(null);
+  const playerId = getStoredPlayerId();
 
-  const name = localStorage.getItem("playerName");
+  const name = getStoredPlayerName();
 
   useEffect(() => {
     if (!name) {
@@ -18,27 +27,62 @@ function GameOver() {
       return;
     }
 
+    const session = buildPlayerSession(name);
+    rememberRoom(roomId);
+
     socket.emit("join_room", {
       roomId,
       name,
+      playerId: session.playerId,
+      authToken: session.authToken,
     });
 
-    socket.on("room_updated", (roomData) => {
+    const handleRoomUpdated = (roomData) => {
       setRoom(roomData);
       if (roomData.status === "game_over" && roomData.winner) {
         setWinner(roomData.winner);
       }
-    });
+    };
+
+    const handleStateSync = (state) => {
+      handleRoomUpdated(state.room);
+      setMyRole(state.wordProgress?.role || null);
+    };
+
+    socket.on("room_updated", handleRoomUpdated);
+    socket.on("STATE_SYNC", handleStateSync);
 
     socket.on("game_over", (data) => {
       setWinner(data.winner);
     });
 
+    const handleError = () => {
+      clearRememberedRoom(roomId);
+      navigate("/");
+    };
+
+    socket.on("error", handleError);
+
     return () => {
-      socket.off("room_updated");
+      socket.off("room_updated", handleRoomUpdated);
+      socket.off("STATE_SYNC", handleStateSync);
       socket.off("game_over");
+      socket.off("error", handleError);
     };
   }, [navigate, roomId, name]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+
+    const handleReconnect = () => {
+      emitReconnectPlayer(roomId);
+    };
+
+    socket.io.on("reconnect", handleReconnect);
+    return () => {
+      socket.io.off("reconnect", handleReconnect);
+    };
+  }, [roomId, playerId]);
 
   const winnerText = winner === "traitor" ? "Traitor wins" : "Citizens win";
   const winnerAccent =
@@ -98,12 +142,12 @@ function GameOver() {
                       </div>
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
-                          player.id === room.traitorId
+                          room.revealedRoles?.[player.id] === "traitor"
                             ? "bg-rose-400/12 text-rose-200"
                             : "bg-cyan-400/10 text-cyan-100"
                         }`}
                       >
-                        {player.id === room.traitorId ? "Traitor" : "Citizen"}
+                        {room.revealedRoles?.[player.id] === "traitor" ? "Traitor" : "Citizen"}
                       </span>
                     </div>
                   ))}
@@ -114,9 +158,18 @@ function GameOver() {
                 </div>
               )}
 
+              {myRole && (
+                <div className="mt-5 rounded-[22px] border border-white/7 bg-white/[0.03] px-4 py-4 text-sm text-zinc-300">
+                  Your role: <span className="font-semibold text-white capitalize">{myRole}</span>
+                </div>
+              )}
+
               <Button
                 className="mt-6 w-full border-white/10 bg-white/[0.05] text-white shadow-[0_18px_50px_-28px_rgba(255,255,255,0.2)] hover:border-white/20 hover:bg-white/[0.08] hover:shadow-[0_22px_60px_-30px_rgba(255,255,255,0.22)]"
-                onClick={() => navigate("/")}
+                onClick={() => {
+                  clearRememberedRoom(roomId);
+                  navigate("/");
+                }}
               >
                 Back to Home
               </Button>

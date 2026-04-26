@@ -3,13 +3,62 @@ const {
   joinRoom,
   getRoom,
   removePlayer,
+  markPlayerOffline,
   addVote,
   addHint,
+  markPlayerEliminated,
+  setPlayerAuthToken,
   resetRound,
 } = require("../store/roomStore");
 
 module.exports = (io, socket) => {
   let currentRoom = null;
+  let currentPlayerId = null;
+
+  const getActivePlayers = (room) =>
+    Object.values(room.players).filter((player) => !player.isEliminated);
+
+  const buildPublicPlayers = (room) =>
+    Object.fromEntries(
+      Object.values(room.players).map((player) => [
+        player.id,
+        {
+          id: player.id,
+          name: player.name,
+          online: Boolean(player.online),
+          isEliminated: Boolean(player.isEliminated),
+          lastSeen: player.lastSeen || null,
+        },
+      ])
+    );
+
+  const buildPublicRoom = (room) => ({
+    roomId: room.roomId,
+    hostId: room.hostId,
+    status: room.status,
+    currentPhase: room.currentPhase,
+    winner: room.winner || null,
+    players: buildPublicPlayers(room),
+    hints:
+      room.currentPhase === "voting" ||
+      room.currentPhase === "round_result" ||
+      room.currentPhase === "game_over"
+        ? room.hints
+        : {},
+    lastEliminated: room.lastEliminated,
+    config: room.config,
+    revealedRoles: room.revealedRoles || null,
+  });
+
+  const emitRoomUpdate = (roomId, room) => {
+    io.to(roomId).emit("room_updated", buildPublicRoom(room));
+  };
+
+  const isAuthorizedPlayer = (room, playerId, authToken) => {
+    if (!room || !playerId || !authToken) return false;
+    const existingPlayer = room.players[playerId];
+    return Boolean(existingPlayer && existingPlayer.authToken === authToken);
+  };
 
   const standardWordPairs = [
     ["Apple", "Orange"],
@@ -25,16 +74,62 @@ module.exports = (io, socket) => {
     ["Strip Club", "Nightclub"],
   ];
 
+  const buildStateSync = (room, playerId) => ({
+    room: buildPublicRoom(room),
+    currentGameState: {
+      roomId: room.roomId,
+      status: room.status,
+      currentPhase: room.currentPhase,
+      winner: room.winner || null,
+      config: room.config,
+    },
+    players: Object.values(buildPublicPlayers(room)),
+    messages: room.messages || [],
+    history: room.history || [],
+    wordProgress: {
+      hints: room.hints,
+      votes: room.votes,
+      hasVoted: room.hasVoted,
+      lastEliminated: room.lastEliminated,
+      word: room.players[playerId]?.word || null,
+      role:
+        room.currentPhase === "game_over"
+          ? room.traitorIds.includes(playerId)
+            ? "traitor"
+            : "citizen"
+          : null,
+    },
+  });
+
+  const syncPlayerState = (targetSocket, room, playerId) => {
+    targetSocket.emit("STATE_SYNC", buildStateSync(room, playerId));
+  };
+
+  const attachToRoom = (roomId, playerId, socketId, name, authToken) => {
+    const result = joinRoom(roomId, playerId, socketId, name);
+    if (!result) return null;
+
+    if (authToken) {
+      setPlayerAuthToken(roomId, playerId, authToken);
+    }
+
+    const { room, reconnected } = result;
+    socket.join(roomId);
+    currentRoom = roomId;
+    currentPlayerId = playerId;
+
+    return { room, reconnected };
+  };
+
   // 🎯 START GAME
   const startGame = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
 
-    const players = Object.values(room.players);
+    const players = getActivePlayers(room);
     const numTraitors = room.config?.numTraitors || 1;
 
     if (players.length < 2) {
-      console.log("Not enough players");
       return;
     }
 
@@ -60,24 +155,18 @@ module.exports = (io, socket) => {
     const [wordA, wordB] =
       availableWordPairs[Math.floor(Math.random() * availableWordPairs.length)];
 
-    console.log(
-      `Starting room ${roomId} with ${use18Plus ? "18+" : "standard"} word pool`
-    );
+    players.forEach((player) => {
+      const isTraitor = room.traitorIds.includes(player.id);
+      const assignedWord = isTraitor ? wordB : wordA;
 
-   players.forEach((player) => {
-  const isTraitor = room.traitorIds.includes(player.id);
+      room.players[player.id].word = assignedWord;
 
-  const assignedWord = isTraitor ? wordB : wordA;
-
-  // ✅ store word on player
-  room.players[player.id].word = assignedWord;
-
-  console.log(`Player ${player.name} (${player.id}) is ${isTraitor ? 'TRAITOR' : 'CITIZEN'} - assigned word: ${assignedWord}`);
-
-  io.to(player.id).emit("game_started", {
-    word: assignedWord,
-  });
-});
+      if (player.socketId) {
+        io.to(player.socketId).emit("game_started", {
+          word: assignedWord,
+        });
+      }
+    });
 
     // ✅ reset round data
     resetRound(roomId);
@@ -85,14 +174,17 @@ module.exports = (io, socket) => {
     room.status = "playing";
     room.currentPhase = "word_assignment";
 
-    io.to(roomId).emit("room_updated", room);
+    emitRoomUpdate(roomId, room);
 
     // ⏰ Start hint collection phase after a delay (using hintTime config)
     const wordAssignmentTime = 30000; // Always 30 seconds to memorize
     setTimeout(() => {
+      if (!getRoom(roomId) || room.currentPhase !== "word_assignment") {
+        return;
+      }
       room.currentPhase = "hint_collection";
       io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
-      io.to(roomId).emit("room_updated", room);
+      emitRoomUpdate(roomId, room);
     }, wordAssignmentTime);
   };
 
@@ -119,7 +211,7 @@ module.exports = (io, socket) => {
     const wasTraitor = room.traitorIds.includes(eliminatedPlayer);
 
     // remove player
-    delete room.players[eliminatedPlayer];
+    markPlayerEliminated(roomId, eliminatedPlayer);
     room.lastEliminated = {
       playerId: eliminatedPlayer,
       wasTraitor,
@@ -137,29 +229,41 @@ module.exports = (io, socket) => {
       eliminatedPlayer,
       wasTraitor,
     });
-    io.to(roomId).emit("room_updated", room);
+    emitRoomUpdate(roomId, room);
 
     // 🏆 WIN CONDITIONS
     if (wasTraitor) {
       room.status = "game_over";
       room.currentPhase = "game_over";
       room.winner = "civilians";
+      room.revealedRoles = Object.fromEntries(
+        Object.keys(room.players).map((playerId) => [
+          playerId,
+          room.traitorIds.includes(playerId) ? "traitor" : "citizen",
+        ])
+      );
 
-      io.to(roomId).emit("room_updated", room);
+      emitRoomUpdate(roomId, room);
       io.to(roomId).emit("game_over", {
         winner: "civilians",
       });
       return;
     }
 
-    const remainingPlayers = Object.keys(room.players).length;
+    const remainingPlayers = getActivePlayers(room).length;
 
     if (remainingPlayers <= 2) {
       room.status = "game_over";
       room.currentPhase = "game_over";
       room.winner = "traitor";
+      room.revealedRoles = Object.fromEntries(
+        Object.keys(room.players).map((playerId) => [
+          playerId,
+          room.traitorIds.includes(playerId) ? "traitor" : "citizen",
+        ])
+      );
 
-      io.to(roomId).emit("room_updated", room);
+      emitRoomUpdate(roomId, room);
       io.to(roomId).emit("game_over", {
         winner: "traitor",
       });
@@ -181,7 +285,7 @@ module.exports = (io, socket) => {
     room.currentPhase = "hint_collection";
 
     io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
-    io.to(roomId).emit("room_updated", room);
+    emitRoomUpdate(roomId, room);
   };
 
   // 💡 END HINT COLLECTION
@@ -189,7 +293,7 @@ module.exports = (io, socket) => {
     const room = getRoom(roomId);
     if (!room) return;
 
-    const totalPlayers = Object.keys(room.players).length;
+    const totalPlayers = getActivePlayers(room).length;
     const totalHints = Object.keys(room.hints).length;
 
     if (totalHints === totalPlayers) {
@@ -200,33 +304,103 @@ module.exports = (io, socket) => {
         phase: "voting",
         hints: room.hints,
       });
-      io.to(roomId).emit("room_updated", room);
+      emitRoomUpdate(roomId, room);
     }
   };
 
   // ✅ CREATE ROOM
-  socket.on("create_room", ({ roomId, name }) => {
-    createRoom(roomId, socket.id, name);
+  socket.on("create_room", ({ roomId, name, playerId, authToken }) => {
+    const resolvedPlayerId = playerId || socket.id;
+    if (!roomId || !name || !authToken) {
+      socket.emit("error", "Missing room or session details");
+      return;
+    }
+    if (getRoom(roomId)) {
+      socket.emit("error", "Room already exists");
+      return;
+    }
+
+    createRoom(roomId, resolvedPlayerId, name, socket.id, { authToken });
     socket.join(roomId);
 
     currentRoom = roomId;
+    currentPlayerId = resolvedPlayerId;
 
-    io.to(roomId).emit("room_updated", getRoom(roomId));
+    const room = getRoom(roomId);
+    emitRoomUpdate(roomId, room);
+    syncPlayerState(socket, room, resolvedPlayerId);
   });
 
   // ✅ JOIN ROOM
-  socket.on("join_room", ({ roomId, name }) => {
-    const room = joinRoom(roomId, socket.id, name);
+  socket.on("join_room", ({ roomId, name, playerId, authToken }) => {
+    const resolvedPlayerId = playerId || socket.id;
+    if (!roomId || !name || !authToken) {
+      socket.emit("error", "Missing room or session details");
+      return;
+    }
 
+    const existingRoom = getRoom(roomId);
+    if (!existingRoom) {
+      socket.emit("error", "Room not found");
+      return;
+    }
+
+    const existingPlayer = existingRoom.players[resolvedPlayerId];
+    if (existingPlayer && existingPlayer.authToken !== authToken) {
+      socket.emit("error", "Player session could not be verified");
+      return;
+    }
+
+    const result = attachToRoom(roomId, resolvedPlayerId, socket.id, name, authToken);
+
+    if (!result) {
+      socket.emit("error", "Room not found");
+      return;
+    }
+
+    const { room, reconnected } = result;
+
+    emitRoomUpdate(roomId, room);
+    syncPlayerState(socket, room, resolvedPlayerId);
+
+    if (reconnected) {
+      io.to(roomId).emit("PLAYER_RECONNECTED", {
+        playerId: resolvedPlayerId,
+        room: buildPublicRoom(room),
+      });
+    }
+  });
+
+  socket.on("RECONNECT_PLAYER", ({ roomId, playerId, authToken }) => {
+    if (!roomId || !playerId || !authToken) return;
+
+    const room = getRoom(roomId);
     if (!room) {
       socket.emit("error", "Room not found");
       return;
     }
 
-    socket.join(roomId);
-    currentRoom = roomId;
+    if (!isAuthorizedPlayer(room, playerId, authToken)) {
+      socket.emit("error", "Player session not found");
+      return;
+    }
 
-    io.to(roomId).emit("room_updated", room);
+    const existingPlayer = room.players[playerId];
+    const result = attachToRoom(
+      roomId,
+      playerId,
+      socket.id,
+      existingPlayer.name,
+      authToken
+    );
+    if (!result) return;
+
+    emitRoomUpdate(roomId, result.room);
+    io.to(roomId).emit("PLAYER_RECONNECTED", {
+      playerId,
+      room: buildPublicRoom(result.room),
+    });
+    syncPlayerState(socket, result.room, playerId);
   });
 
   // ⬅️ LEAVE ROOM
@@ -234,24 +408,34 @@ module.exports = (io, socket) => {
     if (!roomId) return;
 
     socket.leave(roomId);
-    removePlayer(roomId, socket.id);
+    removePlayer(roomId, currentPlayerId || socket.id);
 
     if (currentRoom === roomId) {
       currentRoom = null;
+      currentPlayerId = null;
     }
 
     const room = getRoom(roomId);
 
     if (room) {
-      io.to(roomId).emit("room_updated", room);
+      emitRoomUpdate(roomId, room);
     }
   });
 
   // ✅ START GAME
   socket.on("start_game", ({ roomId, config }) => {
     const room = getRoom(roomId);
-    if (room && config) {
-      room.config = config;
+    if (!room) return;
+    if (currentPlayerId !== room.hostId) {
+      socket.emit("error", "Only the host can start the game");
+      return;
+    }
+
+    if (config) {
+      room.config = {
+        ...room.config,
+        ...config,
+      };
     }
     startGame(roomId);
   });
@@ -260,15 +444,21 @@ module.exports = (io, socket) => {
   socket.on("vote_player", ({ roomId, targetId }) => {
     const room = getRoom(roomId);
     if (!room) return;
+    if (room.currentPhase !== "voting") return;
+
+    const currentPlayer = room.players[currentPlayerId];
+    const targetPlayer = room.players[targetId];
+    if (!currentPlayer || !targetPlayer) return;
+    if (currentPlayer.isEliminated || targetPlayer.isEliminated) return;
 
     // ❌ prevent self vote
-    if (socket.id === targetId) return;
+    if (currentPlayerId === targetId) return;
 
-    addVote(roomId, socket.id, targetId);
+    addVote(roomId, currentPlayerId, targetId);
 
-    io.to(roomId).emit("room_updated", room);
+    emitRoomUpdate(roomId, room);
 
-    const totalPlayers = Object.keys(room.players).length;
+    const totalPlayers = getActivePlayers(room).length;
     const totalVotes = Object.keys(room.hasVoted).length;
 
     if (totalVotes === totalPlayers) {
@@ -282,10 +472,13 @@ module.exports = (io, socket) => {
     if (!room) return;
 
     if (room.currentPhase !== "hint_collection") return;
+    if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) {
+      return;
+    }
 
-    addHint(roomId, socket.id, hint);
+    addHint(roomId, currentPlayerId, hint);
 
-    io.to(roomId).emit("room_updated", room);
+    emitRoomUpdate(roomId, room);
 
     endHintCollection(roomId);
   });
@@ -296,20 +489,26 @@ module.exports = (io, socket) => {
     if (!room) return;
 
     if (room.currentPhase !== "round_result") return;
+    if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) {
+      return;
+    }
 
     startNextRound(roomId);
   });
 
   // ❌ DISCONNECT
   socket.on("disconnect", () => {
-    if (!currentRoom) return;
-
-    removePlayer(currentRoom, socket.id);
+    if (!currentRoom || !currentPlayerId) return;
 
     const room = getRoom(currentRoom);
+    if (!room) return;
 
-    if (room) {
-      io.to(currentRoom).emit("room_updated", room);
-    }
+    markPlayerOffline(currentRoom, currentPlayerId);
+
+    io.to(currentRoom).emit("PLAYER_DISCONNECTED", {
+      playerId: currentPlayerId,
+      room: buildPublicRoom(room),
+    });
+    emitRoomUpdate(currentRoom, room);
   });
 };

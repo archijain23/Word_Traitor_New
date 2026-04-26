@@ -1,29 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Modal from "../components/ui/Modal";
 import { socket } from "../lib/socket";
+import {
+  buildPlayerSession,
+  getRememberedRoom,
+  getStoredPlayerName,
+  rememberRoom,
+  setStoredPlayerName,
+} from "../lib/session";
 
 function Home() {
   const navigate = useNavigate();
 
-  const [name, setName] = useState("");
+  const [name, setName] = useState(getStoredPlayerName());
   const [roomId, setRoomId] = useState("");
   const [showJoinModal, setShowJoinModal] = useState(false);
+
+  useEffect(() => {
+    const lastRoomId = getRememberedRoom();
+    const storedName = getStoredPlayerName();
+
+    if (!lastRoomId || !storedName) return;
+
+    navigate(`/lobby/${lastRoomId}`, {
+      replace: true,
+      state: { skipNamePrompt: true, autoReconnect: true },
+    });
+  }, [navigate]);
 
   const createRoom = () => {
     if (!name) return alert("Enter name");
 
     const newRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const session = buildPlayerSession(name);
 
     socket.emit("create_room", {
       roomId: newRoomId,
       name,
+      playerId: session.playerId,
+      authToken: session.authToken,
     });
 
-    localStorage.setItem("playerName", name);
+    setStoredPlayerName(name);
+    rememberRoom(newRoomId);
     sessionStorage.setItem(`joined-room-${newRoomId}`, "true");
 
     navigate(`/lobby/${newRoomId}`, {
@@ -39,7 +62,9 @@ function Home() {
   const joinRoom = () => {
     if (!name || !roomId) return alert("Enter all fields");
 
-    localStorage.setItem("playerName", name);
+    buildPlayerSession(name);
+    setStoredPlayerName(name);
+    rememberRoom(roomId);
     sessionStorage.setItem(`joined-room-${roomId}`, "true");
 
     navigate(`/lobby/${roomId}`, {

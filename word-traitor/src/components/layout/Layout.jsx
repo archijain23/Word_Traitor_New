@@ -16,7 +16,7 @@ function Layout({ children }) {
               WORD TRAITOR
             </h1>
             <p className="mt-1 text-[11px] uppercase tracking-[0.32em] text-cyan-100/55">
-              Neon Multiplayer Bluff Game
+              
             </p>
           </div>
 
@@ -32,8 +32,8 @@ function Layout({ children }) {
 
       <footer className="relative z-10 border-t border-white/10 bg-slate-950/40">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-4 text-center text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:text-left">
-          <span>Built for bright chaos, secret words, and suspicious friends.</span>
-          <span className="text-cyan-200/70">Socket.IO powered realtime play</span>
+          <span></span>
+          <span className="text-cyan-200/70"></span>
         </div>
       </footer>
     </div>

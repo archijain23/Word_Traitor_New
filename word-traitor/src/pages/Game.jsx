@@ -3,10 +3,18 @@ import { useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
-import { socket } from "../lib/socket";
+import { emitReconnectPlayer, socket } from "../lib/socket";
+import {
+  buildPlayerSession,
+  clearRememberedRoom,
+  getStoredPlayerId,
+  getStoredPlayerName,
+  rememberRoom,
+} from "../lib/session";
 
 function Game() {
   const { roomId } = useParams();
+  const playerId = getStoredPlayerId();
 
   const [room, setRoom] = useState(null);
   const [word, setWord] = useState(null);
@@ -19,8 +27,13 @@ function Game() {
   const [eliminatedInfo, setEliminatedInfo] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
 
-  const name = localStorage.getItem("playerName");
+  const name = getStoredPlayerName();
   const navigate = useNavigate();
+  const me = playerId ? room?.players?.[playerId] : null;
+  const isSpectator = Boolean(me?.isEliminated);
+  const activePlayers = room
+    ? Object.values(room.players).filter((player) => !player.isEliminated)
+    : [];
 
   // ⏰ COUNTDOWN TIMER
   useEffect(() => {
@@ -44,15 +57,43 @@ function Game() {
 
   // 🔌 ROOM UPDATES
   useEffect(() => {
-    socket.on("room_updated", (roomData) => {
+    const applyRoomState = (roomData) => {
       setRoom(roomData);
+
       if (roomData.currentPhase) {
         setPhase(roomData.currentPhase);
       }
+
       if (roomData.lastEliminated) {
         setEliminatedInfo(roomData.lastEliminated);
       }
-    });
+
+      if (roomData.hints) {
+        setHints(roomData.hints);
+        setSubmittedHint(Boolean(playerId && roomData.hints[playerId]));
+      }
+
+      if (roomData.hasVoted) {
+        setHasVoted(Boolean(playerId && roomData.hasVoted[playerId]));
+      }
+
+      const me = playerId ? roomData.players[playerId] : null;
+      if (me?.word) {
+        setWord(me.word);
+      }
+    };
+
+    const handleRoomUpdated = (roomData) => {
+      applyRoomState(roomData);
+    };
+
+    const handleStateSync = (state) => {
+      applyRoomState(state.room);
+      setWord(state.wordProgress?.word || null);
+      setHints(state.wordProgress?.hints || {});
+      setHasVoted(Boolean(playerId && state.wordProgress?.hasVoted?.[playerId]));
+      setSubmittedHint(Boolean(playerId && state.wordProgress?.hints?.[playerId]));
+    };
 
     socket.on("phase_changed", (data) => {
       setPhase(data.phase);
@@ -83,45 +124,65 @@ function Game() {
       navigate(`/game-over/${roomId}`);
     });
 
+    const handleError = () => {
+      clearRememberedRoom(roomId);
+      navigate("/");
+    };
+
+    socket.on("room_updated", handleRoomUpdated);
+    socket.on("STATE_SYNC", handleStateSync);
+    socket.on("error", handleError);
+
     return () => {
-      socket.off("room_updated");
+      socket.off("room_updated", handleRoomUpdated);
+      socket.off("STATE_SYNC", handleStateSync);
       socket.off("phase_changed");
       socket.off("game_over");
+      socket.off("error", handleError);
     };
-  }, [navigate, roomId]);
+  }, [navigate, playerId, roomId]);
 
   // 🎯 PRIVATE WORD
-useEffect(() => {
-  socket.on("game_started", (data) => {
-    console.log("Received game_started event with word:", data.word);
-    setWord(data.word);
-  });
+  useEffect(() => {
+    const handleGameStarted = (data) => {
+      setWord(data.word);
+      setCountdown(30);
+    };
 
-  socket.on("room_updated", (roomData) => {
-    const me = roomData.players[socket.id];
+    socket.on("game_started", handleGameStarted);
 
-    // ✅ fallback if event missed
-    if (me?.word) {
-      console.log("Using fallback word from room_updated:", me.word);
-      setWord(me.word);
-    }
-  });
-
-  return () => {
-    socket.off("game_started");
-    socket.off("room_updated");
-  };
-}, []);
+    return () => {
+      socket.off("game_started", handleGameStarted);
+    };
+  }, []);
 
   // 🚀 Join room (important if user refreshes)
   useEffect(() => {
     if (!name) return;
 
+    const session = buildPlayerSession(name);
+    rememberRoom(roomId);
+
     socket.emit("join_room", {
       roomId,
       name,
+      playerId: session.playerId,
+      authToken: session.authToken,
     });
   }, [roomId, name]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+
+    const handleReconnect = () => {
+      emitReconnectPlayer(roomId);
+    };
+
+    socket.io.on("reconnect", handleReconnect);
+    return () => {
+      socket.io.off("reconnect", handleReconnect);
+    };
+  }, [roomId, playerId]);
 
   // ⛔ loading
   if (!room) {
@@ -156,6 +217,12 @@ useEffect(() => {
               </div>
             </div>
           </div>
+
+          {isSpectator && (
+            <div className="mt-4 rounded-[24px] border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-100 shadow-[0_0_38px_rgba(251,191,36,0.12)]">
+              You were voted out. You are now spectating and can watch the rest of the game.
+            </div>
+          )}
         </div>
 
         {/* 🏠 ROOM */}
@@ -198,7 +265,11 @@ useEffect(() => {
               Say something related to your word (don't expose it!)
             </p>
 
-            {!submittedHint ? (
+            {isSpectator ? (
+              <p className="text-center text-amber-300">
+                Spectators cannot submit hints in later rounds.
+              </p>
+            ) : !submittedHint ? (
               <>
                 <input
                   type="text"
@@ -294,11 +365,24 @@ useEffect(() => {
               })}
             </div>
 
-            {!hasVoted ? (
+            {isSpectator ? (
+              <p className="text-center text-amber-300">
+                Spectators cannot vote and can only watch this round.
+              </p>
+            ) : !hasVoted ? (
               <>
+                <div className="mb-3 mt-6 border-t border-white/8 pt-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-200/75">
+                    Vote
+                  </div>
+                  <p className="mt-2 text-sm text-zinc-400">
+                    Choose the player you think is the traitor.
+                  </p>
+                </div>
+
                 <div className="space-y-2">
-                  {Object.values(room.players)
-                    .filter((player) => player.id !== socket.id)
+                  {activePlayers
+                    .filter((player) => player.id !== playerId)
                     .map((player) => (
                       <div
                         key={player.id}
@@ -362,16 +446,21 @@ useEffect(() => {
             {!eliminatedInfo.wasTraitor && (
               <>
                 <p className="text-sm text-zinc-500 mt-3">
-                  The game will continue once a player advances the round.
+                  {isSpectator
+                    ? "Active players will continue to the next round while you spectate."
+                    : "The game will continue once a player advances the round."}
                 </p>
-                <Button
-                  className="mt-4 w-full"
-                  onClick={() => {
-                    socket.emit("continue_round", { roomId });
-                  }}
-                >
-                  Continue to Next Round
-                </Button>
+
+                {!isSpectator && (
+                  <Button
+                    className="mt-4 w-full"
+                    onClick={() => {
+                      socket.emit("continue_round", { roomId });
+                    }}
+                  >
+                    Continue to Next Round
+                  </Button>
+                )}
               </>
             )}
           </Card>
