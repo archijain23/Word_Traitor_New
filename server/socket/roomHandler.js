@@ -63,18 +63,104 @@ module.exports = (io, socket) => {
     return Boolean(existingPlayer && existingPlayer.authToken === authToken);
   };
 
+  // ─── WORD PAIRS ───────────────────────────────────────────────────────────
+  // Each pair: [civilianWord, traitorWord]
+  // Standard (safe for all ages)
   const standardWordPairs = [
     ["Apple", "Orange"],
     ["Dog", "Wolf"],
     ["Car", "Bike"],
     ["Ocean", "River"],
+    ["Doctor", "Nurse"],
+    ["Sword", "Knife"],
+    ["Castle", "Fort"],
+    ["Vampire", "Zombie"],
+    ["Piano", "Guitar"],
+    ["Football", "Rugby"],
+    ["Astronaut", "Pilot"],
+    ["Lion", "Tiger"],
+    ["Diamond", "Ruby"],
+    ["Volcano", "Earthquake"],
+    ["Pirate", "Ninja"],
+    ["Coffee", "Tea"],
+    ["Laptop", "Tablet"],
+    ["Subway", "Bus"],
+    ["Chef", "Baker"],
+    ["Museum", "Library"],
+    ["Basketball", "Volleyball"],
+    ["Winter", "Autumn"],
+    ["Shark", "Whale"],
+    ["Crown", "Tiara"],
+    ["Rocket", "Missile"],
+    ["Elephant", "Rhino"],
+    ["Architect", "Engineer"],
+    ["Poem", "Novel"],
+    ["Pizza", "Burger"],
+    ["Headphones", "Speakers"],
+    ["Lake", "Pond"],
+    ["Witch", "Wizard"],
+    ["Painting", "Drawing"],
+    ["Treadmill", "Bicycle"],
+    ["Compass", "Map"],
+    ["Ballet", "Hip Hop"],
+    ["Sunglasses", "Goggles"],
+    ["Owl", "Hawk"],
+    ["Thunder", "Lightning"],
+    ["Candy", "Chocolate"],
+    ["Prison", "Jail"],
+    ["Trumpet", "Saxophone"],
+    ["Skiing", "Snowboarding"],
+    ["Crocodile", "Alligator"],
+    ["Superhero", "Villain"],
+    ["Sofa", "Chair"],
+    ["Microwave", "Oven"],
+    ["Whale", "Dolphin"],
+    ["Passport", "Visa"],
+    ["Telescope", "Microscope"],
   ];
+
+  // Adult-only pairs (enabled when use18Plus is true)
   const adultWordPairs = [
     ["Lingerie", "Bikini"],
     ["Hookup", "Date"],
     ["Condom", "Birth Control"],
     ["Champagne", "Tequila"],
     ["Strip Club", "Nightclub"],
+    ["Affair", "Crush"],
+    ["Hangover", "Headache"],
+    ["Seduction", "Flirting"],
+    ["One Night Stand", "Blind Date"],
+    ["Whiskey", "Beer"],
+    ["Casino", "Arcade"],
+    ["Divorce", "Breakup"],
+    ["Threesome", "Couple"],
+    ["Dominatrix", "Boss"],
+    ["Sex Tape", "Home Video"],
+    ["Brothel", "Hotel"],
+    ["Vodka", "Gin"],
+    ["Stripper", "Dancer"],
+    ["BDSM", "Roleplay"],
+    ["Pornstar", "Actor"],
+    ["Orgasm", "Climax"],
+    ["Vibrator", "Massager"],
+    ["Escort", "Tour Guide"],
+    ["Fetish", "Hobby"],
+    ["Lap Dance", "Salsa Dance"],
+    ["Marijuana", "Tobacco"],
+    ["Cocaine", "Powder"],
+    ["Orgy", "Party"],
+    ["Nude Beach", "Water Park"],
+    ["Safeword", "Password"],
+    ["Swingers", "Dance Partners"],
+    ["Kink", "Quirk"],
+    ["Bondage", "Yoga Strap"],
+    ["Sugar Daddy", "Sponsor"],
+    ["Weed", "Herb"],
+    ["Booty Call", "Late Night Call"],
+    ["Erotic", "Romantic"],
+    ["Sexting", "Texting"],
+    ["Playboy", "Magazine"],
+    ["Cheating", "Lying"],
   ];
 
   const buildStateSync = (room, playerId) => ({
@@ -139,7 +225,8 @@ module.exports = (io, socket) => {
     }
     room.traitorId = room.traitorIds[0];
 
-    const use18Plus = room.config?.use18Plus;
+    // ✅ Fix: read use18Plus strictly as boolean from config
+    const use18Plus = room.config?.use18Plus === true;
     const availableWordPairs = use18Plus
       ? [...standardWordPairs, ...adultWordPairs]
       : standardWordPairs;
@@ -158,16 +245,9 @@ module.exports = (io, socket) => {
     resetRound(roomId);
     room.status = "playing";
     room.currentPhase = "word_assignment";
+    // Clear the server-side fallback timer — client now drives the transition
+    // via word_reveal_done event after 15s
     emitRoomUpdate(roomId, room);
-
-    const wordAssignmentTime = 30000;
-    setTimeout(() => {
-      const r = getRoom(roomId);
-      if (!r || r.currentPhase !== "word_assignment") return;
-      r.currentPhase = "hint_collection";
-      io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
-      emitRoomUpdate(roomId, r);
-    }, wordAssignmentTime);
   };
 
   // 🗳️ END VOTING
@@ -311,8 +391,26 @@ module.exports = (io, socket) => {
     const room = getRoom(roomId);
     if (!room) return;
     if (currentPlayerId !== room.hostId) { socket.emit("error", "Only the host can start the game"); return; }
-    if (config) room.config = { ...room.config, ...config };
+    // Merge config — ensure use18Plus is stored as a real boolean
+    if (config) {
+      room.config = {
+        ...room.config,
+        ...config,
+        use18Plus: config.use18Plus === true,
+      };
+    }
     startGame(roomId);
+  });
+
+  // ⏱️ WORD REVEAL DONE — client fires after 15s; first valid emit advances phase
+  socket.on("word_reveal_done", ({ roomId }) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+    // Guard: only transition once, ignore duplicate emits from other clients
+    if (room.currentPhase !== "word_assignment") return;
+    room.currentPhase = "hint_collection";
+    io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
+    emitRoomUpdate(roomId, room);
   });
 
   // 🗳️ VOTE
@@ -359,17 +457,13 @@ module.exports = (io, socket) => {
   socket.on("play_again", ({ roomId }) => {
     const room = getRoom(roomId);
     if (!room) return;
-    // Only host can trigger play again
     if (currentPlayerId !== room.hostId) {
       socket.emit("error", "Only the host can start a new game");
       return;
     }
-    // Only valid after game_over
     if (room.status !== "game_over") return;
-
     resetGame(roomId);
     emitRoomUpdate(roomId, room);
-    // Tell all clients to go back to lobby
     io.to(roomId).emit("return_to_lobby", { roomId });
   });
 
