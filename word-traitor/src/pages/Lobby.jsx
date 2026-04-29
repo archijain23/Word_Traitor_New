@@ -32,7 +32,6 @@ function Lobby() {
   const [use18Plus, setUse18Plus] = useState(false);
   const [anonymousVoting, setAnonymousVoting] = useState(false);
 
-  // 🔌 Listen for updates
   useEffect(() => {
     const applyRoomState = (roomData) => {
       setRoom(roomData);
@@ -67,7 +66,6 @@ function Lobby() {
     };
   }, [navigate, roomId]);
 
-  // 🚀 Join room when name is ready
   useEffect(() => {
     if (showNameModal || !name) return;
     const session = buildPlayerSession(name);
@@ -121,19 +119,32 @@ function Lobby() {
   }
 
   const isHost = playerId === room.hostId;
-
-  // Determine if room is in post-game state (back to waiting after play_again)
   const isWaiting = room.status === "waiting";
+
+  // ─── CONFIG DISPLAY (read-only, shown to all players) ───────────────────────
+  const configRows = [
+    { label: "Traitors", value: room.config?.numTraitors ?? 1 },
+    { label: "Hint Time", value: `${room.config?.hintTime ?? 30}s` },
+    { label: "Difficulty", value: room.config?.difficulty ?? "Medium" },
+    { label: "18+ Words", value: room.config?.use18Plus ? "On" : "Off" },
+    { label: "Anonymous Voting", value: room.config?.anonymousVoting ? "On" : "Off" },
+  ];
 
   return (
     <Layout>
       <div className="space-y-6">
+
+        {/* ── Hero header ── */}
         <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,16,38,0.94),rgba(21,12,44,0.88))] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_28px_90px_-38px_rgba(34,211,238,0.38)]">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-200/80">Room Control</p>
               <h1 className="mt-3 text-3xl font-black text-white sm:text-4xl">Build your glowing trap</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">Tune the room, invite the crew, and launch the round when everyone is in.</p>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">
+                {isHost
+                  ? "Tune the room, invite the crew, and launch the round when everyone is in."
+                  : "Sit tight — the host is setting things up. You'll jump in when the game starts."}
+              </p>
             </div>
             <div className="rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-400/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)]">
               <div className="text-[11px] uppercase tracking-[0.32em] text-fuchsia-200/75">Share Code</div>
@@ -142,79 +153,115 @@ function Lobby() {
           </div>
         </div>
 
+        {/* ── Main grid: settings (host) or game info (player) + player list ── */}
         <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr]">
-          <Card className="p-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
-              <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Settings</p>
-                <h2 className="text-3xl font-bold text-white mt-2">Configure your lobby</h2>
-              </div>
-              <div className="rounded-2xl border border-cyan-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300">
-                Room Code: <span className="text-cyan-300">{room.roomId}</span>
-              </div>
-            </div>
 
-            <Button
-              onClick={handleBackToHome}
-              className="mb-5 w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
-            >
-              Back To Home
-            </Button>
+          {/* ── LEFT COLUMN ── */}
+          {isHost ? (
+            /* HOST: full settings panel */
+            <Card className="p-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Settings</p>
+                  <h2 className="text-3xl font-bold text-white mt-2">Configure your lobby</h2>
+                </div>
+                <div className="rounded-2xl border border-cyan-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300">
+                  Room Code: <span className="text-cyan-300">{room.roomId}</span>
+                </div>
+              </div>
 
-            <div className="grid gap-5">
-              <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
-                <div>
-                  <p className="text-sm text-zinc-400">No. of Traitors</p>
-                  <p className="text-white font-semibold">One or more secret opponents</p>
-                </div>
-                <select value={numTraitors} onChange={(e) => setNumTraitors(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                </select>
-              </div>
-              <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
-                <div>
-                  <p className="text-sm text-zinc-400">Hint Drop Time (sec)</p>
-                  <p className="text-white font-semibold">How long players have to drop hints</p>
-                </div>
-                <select value={hintTime} onChange={(e) => setHintTime(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
-                  <option value={15}>15</option>
-                  <option value={30}>30</option>
-                  <option value={45}>45</option>
-                </select>
-              </div>
-              <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
-                <div>
-                  <p className="text-sm text-zinc-400">Word Difficulty</p>
-                  <p className="text-white font-semibold">Choose the word difficulty level</p>
-                </div>
-                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
-                  <option value="Easy">Easy</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Hard">Hard</option>
-                </select>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
-                <div>
-                  <p className="text-sm text-zinc-400">18+ Words</p>
-                  <p className="text-white font-semibold">Enable mature word set</p>
-                </div>
-                <button type="button" onClick={() => setUse18Plus((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${use18Plus ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
-                  {use18Plus ? "On" : "Off"}
-                </button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
-                <div>
-                  <p className="text-sm text-zinc-400">Anonymous Voting</p>
-                  <p className="text-white font-semibold">Hide voter names during results</p>
-                </div>
-                <button type="button" onClick={() => setAnonymousVoting((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${anonymousVoting ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
-                  {anonymousVoting ? "On" : "Off"}
-                </button>
-              </div>
-            </div>
-          </Card>
+              <Button
+                onClick={handleBackToHome}
+                className="mb-5 w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
+              >
+                Back To Home
+              </Button>
 
+              <div className="grid gap-5">
+                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                  <div>
+                    <p className="text-sm text-zinc-400">No. of Traitors</p>
+                    <p className="text-white font-semibold">One or more secret opponents</p>
+                  </div>
+                  <select value={numTraitors} onChange={(e) => setNumTraitors(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                  </select>
+                </div>
+
+                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                  <div>
+                    <p className="text-sm text-zinc-400">Hint Drop Time (sec)</p>
+                    <p className="text-white font-semibold">How long players have to drop hints</p>
+                  </div>
+                  <select value={hintTime} onChange={(e) => setHintTime(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
+                    <option value={15}>15</option>
+                    <option value={30}>30</option>
+                    <option value={45}>45</option>
+                  </select>
+                </div>
+
+                <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                  <div>
+                    <p className="text-sm text-zinc-400">Word Difficulty</p>
+                    <p className="text-white font-semibold">Choose the word difficulty level</p>
+                  </div>
+                  <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                  <div>
+                    <p className="text-sm text-zinc-400">18+ Words</p>
+                    <p className="text-white font-semibold">Enable mature word set</p>
+                  </div>
+                  <button type="button" onClick={() => setUse18Plus((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${use18Plus ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
+                    {use18Plus ? "On" : "Off"}
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                  <div>
+                    <p className="text-sm text-zinc-400">Anonymous Voting</p>
+                    <p className="text-white font-semibold">Hide voter names during results</p>
+                  </div>
+                  <button type="button" onClick={() => setAnonymousVoting((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${anonymousVoting ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
+                    {anonymousVoting ? "On" : "Off"}
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            /* PLAYER: read-only game info card */
+            <Card className="p-8">
+              <div className="mb-8">
+                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Info</p>
+                <h2 className="text-3xl font-bold text-white mt-2">Room settings</h2>
+                <p className="text-zinc-400 text-sm mt-2">Configured by the host — settings are locked until the game starts.</p>
+              </div>
+
+              <div className="grid gap-3 mb-6">
+                {configRows.map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-4">
+                    <span className="text-sm text-zinc-400">{label}</span>
+                    <span className="text-sm font-semibold text-white">{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                onClick={handleBackToHome}
+                className="w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
+              >
+                Leave Room
+              </Button>
+            </Card>
+          )}
+
+          {/* ── RIGHT COLUMN: player list + invite ── */}
           <div className="space-y-6">
             <Card className="p-6 bg-slate-950/78 border border-fuchsia-300/14">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -246,11 +293,9 @@ function Lobby() {
             </Card>
 
             <Card className="p-6 bg-slate-950/78 border border-cyan-300/14">
-              <div className="flex items-center justify-between mb-4 gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Invite Players</p>
-                  <p className="text-zinc-400 text-sm">Share this link to join directly.</p>
-                </div>
+              <div className="mb-4">
+                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Invite Players</p>
+                <p className="text-zinc-400 text-sm mt-1">Share this link to join directly.</p>
               </div>
               <div className="rounded-3xl border border-cyan-300/12 bg-slate-950/82 p-4 mb-4">
                 <p className="text-xs text-zinc-500 mb-2">Invite link</p>
@@ -272,7 +317,6 @@ function Lobby() {
                 </div>
               </div>
 
-              {/* ✅ Start Game button — only shown to host when room is waiting */}
               {isWaiting && isHost && (
                 <Button
                   onClick={() => socket.emit("start_game", {
@@ -285,7 +329,6 @@ function Lobby() {
                 </Button>
               )}
 
-              {/* Non-host waiting message */}
               {isWaiting && !isHost && (
                 <p className="text-sm text-zinc-500 text-center py-2">
                   Waiting for the host to start the game...
