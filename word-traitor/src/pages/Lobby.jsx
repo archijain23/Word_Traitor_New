@@ -121,7 +121,6 @@ function Lobby() {
   const isHost = playerId === room.hostId;
   const isWaiting = room.status === "waiting";
 
-  // ─── CONFIG DISPLAY (read-only, shown to all players) ───────────────────────
   const configRows = [
     { label: "Traitors", value: room.config?.numTraitors ?? 1 },
     { label: "Hint Time", value: `${room.config?.hintTime ?? 30}s` },
@@ -134,7 +133,7 @@ function Lobby() {
     <Layout>
       <div className="space-y-6">
 
-        {/* ── Hero header ── */}
+        {/* Hero header */}
         <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,16,38,0.94),rgba(21,12,44,0.88))] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_28px_90px_-38px_rgba(34,211,238,0.38)]">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -153,10 +152,10 @@ function Lobby() {
           </div>
         </div>
 
-        {/* ── Main grid: settings (host) or game info (player) + player list ── */}
+        {/* Main grid */}
         <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr]">
 
-          {/* ── LEFT COLUMN ── */}
+          {/* LEFT COLUMN */}
           {isHost ? (
             /* HOST: full settings panel */
             <Card className="p-8">
@@ -178,7 +177,7 @@ function Lobby() {
               </Button>
 
               <div className="grid gap-5">
-                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">No. of Traitors</p>
                     <p className="text-white font-semibold">One or more secret opponents</p>
@@ -189,7 +188,7 @@ function Lobby() {
                   </select>
                 </div>
 
-                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">Hint Drop Time (sec)</p>
                     <p className="text-white font-semibold">How long players have to drop hints</p>
@@ -201,7 +200,7 @@ function Lobby() {
                   </select>
                 </div>
 
-                <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">Word Difficulty</p>
                     <p className="text-white font-semibold">Choose the word difficulty level</p>
@@ -213,7 +212,7 @@ function Lobby() {
                   </select>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">18+ Words</p>
                     <p className="text-white font-semibold">Enable mature word set</p>
@@ -223,7 +222,7 @@ function Lobby() {
                   </button>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">Anonymous Voting</p>
                     <p className="text-white font-semibold">Hide voter names during results</p>
@@ -235,14 +234,13 @@ function Lobby() {
               </div>
             </Card>
           ) : (
-            /* PLAYER: read-only game info card */
+            /* PLAYER: read-only game info */
             <Card className="p-8">
               <div className="mb-8">
                 <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Info</p>
                 <h2 className="text-3xl font-bold text-white mt-2">Room settings</h2>
                 <p className="text-zinc-400 text-sm mt-2">Configured by the host — settings are locked until the game starts.</p>
               </div>
-
               <div className="grid gap-3 mb-6">
                 {configRows.map(({ label, value }) => (
                   <div key={label} className="flex items-center justify-between rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-4">
@@ -251,7 +249,6 @@ function Lobby() {
                   </div>
                 ))}
               </div>
-
               <Button
                 onClick={handleBackToHome}
                 className="w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
@@ -261,7 +258,7 @@ function Lobby() {
             </Card>
           )}
 
-          {/* ── RIGHT COLUMN: player list + invite ── */}
+          {/* RIGHT COLUMN: player list + invite */}
           <div className="space-y-6">
             <Card className="p-6 bg-slate-950/78 border border-fuchsia-300/14">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -336,6 +333,7 @@ function Lobby() {
               )}
             </Card>
           </div>
+
         </div>
       </div>
     </Layout>
