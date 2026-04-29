@@ -28,11 +28,8 @@ function Game() {
   const [hasVoted, setHasVoted] = useState(false);
   const [continueClicked, setContinueClicked] = useState(false);
 
-  // Keep a ref to the current phase so event handlers always see latest value
   const phaseRef = useRef(phase);
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   const name = getStoredPlayerName();
   const navigate = useNavigate();
@@ -48,10 +45,7 @@ function Game() {
     if (phase === "word_assignment") {
       timer = setInterval(() => {
         setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
+          if (prev <= 1) { clearInterval(timer); return 0; }
           return prev - 1;
         });
       }, 1000);
@@ -59,106 +53,65 @@ function Game() {
     return () => { if (timer) clearInterval(timer); };
   }, [phase]);
 
-  // 🔌 ROOM UPDATES
+  // 🔌 SOCKET LISTENERS
   useEffect(() => {
     const applyRoomState = (roomData) => {
       setRoom(roomData);
-
       if (roomData.currentPhase) {
         setPhase(roomData.currentPhase);
         phaseRef.current = roomData.currentPhase;
       }
-
-      if (roomData.lastEliminated) {
-        setEliminatedInfo(roomData.lastEliminated);
-      }
-
-      // ✅ FIX: Only update hints from roomData when NOT in hint_collection phase.
-      // During hint_collection, server intentionally sends hints:{} to keep them secret.
-      // Updating from that would wipe local submittedHint state and cause the glitch.
+      if (roomData.lastEliminated) setEliminatedInfo(roomData.lastEliminated);
       const currentPhase = roomData.currentPhase || phaseRef.current;
       if (currentPhase !== "hint_collection") {
-        if (roomData.hints && Object.keys(roomData.hints).length > 0) {
-          setHints(roomData.hints);
-        }
-        if (roomData.hasVoted) {
-          setHasVoted(Boolean(playerId && roomData.hasVoted[playerId]));
-        }
+        if (roomData.hints && Object.keys(roomData.hints).length > 0) setHints(roomData.hints);
+        if (roomData.hasVoted) setHasVoted(Boolean(playerId && roomData.hasVoted[playerId]));
       }
-
       const me = playerId ? roomData.players?.[playerId] : null;
-      if (me?.word) {
-        setWord(me.word);
-      }
+      if (me?.word) setWord(me.word);
     };
 
-    const handleRoomUpdated = (roomData) => {
-      applyRoomState(roomData);
-    };
+    const handleRoomUpdated = (roomData) => { applyRoomState(roomData); };
 
     const handleStateSync = (state) => {
       applyRoomState(state.room);
-      if (state.wordProgress?.word) {
-        setWord(state.wordProgress.word);
-      }
-      // Only restore hints/votes if not in hint_collection phase
+      if (state.wordProgress?.word) setWord(state.wordProgress.word);
       if (state.room?.currentPhase !== "hint_collection") {
-        if (state.wordProgress?.hints) {
-          setHints(state.wordProgress.hints);
-        }
-        if (state.wordProgress?.hasVoted) {
-          setHasVoted(Boolean(playerId && state.wordProgress.hasVoted[playerId]));
-        }
+        if (state.wordProgress?.hints) setHints(state.wordProgress.hints);
+        if (state.wordProgress?.hasVoted) setHasVoted(Boolean(playerId && state.wordProgress.hasVoted[playerId]));
       }
-      // Restore submittedHint only if hints are available
-      if (state.wordProgress?.hints?.[playerId]) {
-        setSubmittedHint(true);
-      }
+      if (state.wordProgress?.hints?.[playerId]) setSubmittedHint(true);
     };
 
-    // ✅ FIX: Named handler so it can be properly removed
     const handlePhaseChanged = (data) => {
       setPhase(data.phase);
       phaseRef.current = data.phase;
-
       if (data.phase === "hint_collection") {
-        // Fresh round — reset hint state
-        setSubmittedHint(false);
-        setHint("");
-        setHints({});
-        setEliminatedInfo(null);
-        setContinueClicked(false);
+        setSubmittedHint(false); setHint(""); setHints({});
+        setEliminatedInfo(null); setContinueClicked(false);
       }
-
       if (data.phase === "voting") {
-        // Hints are now revealed by server in this event
-        if (data.hints) {
-          setHints(data.hints);
-        }
-        setHasVoted(false);
-        setSelectedPlayer(null);
+        if (data.hints) setHints(data.hints);
+        setHasVoted(false); setSelectedPlayer(null);
       }
-
       if (data.phase === "word_assignment") {
-        setCountdown(30);
-        setSubmittedHint(false);
-        setHint("");
-        setHints({});
-        setContinueClicked(false);
+        setCountdown(30); setSubmittedHint(false); setHint("");
+        setHints({}); setContinueClicked(false);
       }
-
       if (data.phase === "round_result") {
-        setEliminatedInfo({
-          playerId: data.eliminatedPlayer,
-          wasTraitor: data.wasTraitor,
-        });
+        setEliminatedInfo({ playerId: data.eliminatedPlayer, wasTraitor: data.wasTraitor });
         setContinueClicked(false);
       }
     };
 
-    const handleGameOver = () => {
-      navigate(`/game-over/${roomId}`);
+    // ✅ Navigate back to lobby for everyone when host triggers play_again
+    const handleReturnToLobby = ({ roomId: rid }) => {
+      navigate(`/lobby/${rid}`, { state: { skipNamePrompt: true } });
     };
+
+    // game_over no longer navigates away — players see the result inline
+    // and wait for host to trigger play_again or they can leave
+    const handleGameOver = () => {};
 
     const handleError = () => {
       clearRememberedRoom(roomId);
@@ -168,6 +121,7 @@ function Game() {
     socket.on("room_updated", handleRoomUpdated);
     socket.on("STATE_SYNC", handleStateSync);
     socket.on("phase_changed", handlePhaseChanged);
+    socket.on("return_to_lobby", handleReturnToLobby);
     socket.on("game_over", handleGameOver);
     socket.on("error", handleError);
 
@@ -175,6 +129,7 @@ function Game() {
       socket.off("room_updated", handleRoomUpdated);
       socket.off("STATE_SYNC", handleStateSync);
       socket.off("phase_changed", handlePhaseChanged);
+      socket.off("return_to_lobby", handleReturnToLobby);
       socket.off("game_over", handleGameOver);
       socket.off("error", handleError);
     };
@@ -182,28 +137,20 @@ function Game() {
 
   // 🎯 PRIVATE WORD
   useEffect(() => {
-    const handleGameStarted = (data) => {
-      setWord(data.word);
-      setCountdown(30);
-    };
+    const handleGameStarted = (data) => { setWord(data.word); setCountdown(30); };
     socket.on("game_started", handleGameStarted);
     return () => { socket.off("game_started", handleGameStarted); };
   }, []);
 
-  // 🚀 Join room on mount / refresh
+  // 🚀 JOIN ON MOUNT
   useEffect(() => {
     if (!name) return;
     const session = buildPlayerSession(name);
     rememberRoom(roomId);
-    socket.emit("join_room", {
-      roomId,
-      name,
-      playerId: session.playerId,
-      authToken: session.authToken,
-    });
+    socket.emit("join_room", { roomId, name, playerId: session.playerId, authToken: session.authToken });
   }, [roomId, name]);
 
-  // 🔁 Reconnect
+  // 🔁 RECONNECT
   useEffect(() => {
     if (!roomId || !playerId) return;
     const handleReconnect = () => { emitReconnectPlayer(roomId); };
@@ -211,7 +158,6 @@ function Game() {
     return () => { socket.io.off("reconnect", handleReconnect); };
   }, [roomId, playerId]);
 
-  // ⛔ Loading
   if (!room) {
     return (
       <Layout>
@@ -220,7 +166,8 @@ function Game() {
     );
   }
 
-  // 🎮 PHASE UI
+  const isHost = playerId === room.hostId;
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -229,52 +176,95 @@ function Game() {
         <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-200/80">
-                Live Round
-              </p>
-              <h1 className="mt-3 text-3xl font-black text-white sm:text-4xl">
-                Read the room. Catch the traitor.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">
-                Watch the clues, trust your instincts, and vote before the bluff gets away.
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-200/80">Live Round</p>
+              <h1 className="mt-3 text-3xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">Watch the clues, trust your instincts, and vote before the bluff gets away.</p>
             </div>
             <div className="rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)]">
               <div className="text-[11px] uppercase tracking-[0.32em] text-fuchsia-200/70">Current Phase</div>
-              <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">
-                {phase.replace(/_/g, " ")}
-              </div>
+              <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
             </div>
           </div>
-
           {isSpectator && (
-            <div className="mt-4 rounded-[24px] border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-100 shadow-[0_0_38px_rgba(251,191,36,0.12)]">
-              You were voted out. You are now spectating and can watch the rest of the game.
+            <div className="mt-4 rounded-[24px] border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-100">
+              You were voted out. You are now spectating.
             </div>
           )}
         </div>
 
         {/* Room ID */}
         <Card className="p-6">
-          <h2 className="text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">
-            Room: {room.roomId}
-          </h2>
+          <h2 className="text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">Room: {room.roomId}</h2>
         </Card>
+
+        {/* 🏆 GAME OVER */}
+        {phase === "game_over" && (
+          <Card className="p-8 text-center">
+            <div className="text-5xl mb-4">{room.winner === "civilians" ? "🎉" : "🕵️"}</div>
+            <h2 className="text-2xl font-black text-white mb-2">
+              {room.winner === "civilians" ? "Civilians Win!" : "Traitor Wins!"}
+            </h2>
+            <p className="text-zinc-400 mb-6">
+              {room.winner === "civilians"
+                ? "The traitor has been unmasked."
+                : "The traitor blended in and survived."}
+            </p>
+
+            {/* Reveal roles */}
+            {room.revealedRoles && (
+              <div className="space-y-2 mb-8 text-left">
+                <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">Roles Revealed</p>
+                {Object.entries(room.revealedRoles).map(([pid, role]) => (
+                  <div key={pid} className={`flex justify-between rounded-2xl border p-4 ${
+                    role === "traitor"
+                      ? "border-rose-400/30 bg-rose-500/10"
+                      : "border-white/8 bg-slate-950/70"
+                  }`}>
+                    <span className="text-white font-semibold">{room.players[pid]?.name || "Unknown"}</span>
+                    <span className={`text-sm font-bold ${
+                      role === "traitor" ? "text-rose-400" : "text-cyan-400"
+                    }`}>
+                      {role === "traitor" ? "🔴 Traitor" : "🔵 Civilian"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Host: Play Again | Everyone: Leave */}
+            <div className="flex flex-col gap-3">
+              {isHost && (
+                <Button
+                  className="w-full py-4 text-base font-black"
+                  onClick={() => socket.emit("play_again", { roomId })}
+                >
+                  🔁 Play Again
+                </Button>
+              )}
+              {!isHost && (
+                <p className="text-sm text-zinc-500">Waiting for the host to start a new game...</p>
+              )}
+              <button
+                onClick={() => {
+                  socket.emit("leave_room", { roomId });
+                  navigate("/");
+                }}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm text-zinc-400 transition hover:border-white/20 hover:text-white"
+              >
+                Leave Room
+              </button>
+            </div>
+          </Card>
+        )}
 
         {/* 🎯 WORD ASSIGNMENT */}
         {phase === "word_assignment" && (
           <Card className="p-8 text-center">
             <h2 className="text-lg text-zinc-300/75 mb-2">Your Secret Word</h2>
-            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] text-center">
-              {word}
-            </h1>
+            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)]">{word}</h1>
             <div className="text-center mt-4">
-              <div className="text-3xl font-black text-amber-300 drop-shadow-[0_0_18px_rgba(252,211,77,0.3)]">
-                {countdown}s
-              </div>
-              <p className="text-sm text-zinc-400 mt-2">
-                Memorize this word... Hint phase starts soon!
-              </p>
+              <div className="text-3xl font-black text-amber-300 drop-shadow-[0_0_18px_rgba(252,211,77,0.3)]">{countdown}s</div>
+              <p className="text-sm text-zinc-400 mt-2">Memorize this word... Hint phase starts soon!</p>
             </div>
           </Card>
         )}
@@ -283,14 +273,9 @@ function Game() {
         {phase === "hint_collection" && (
           <Card className="p-8">
             <h2 className="text-lg font-semibold mb-3">Give a Hint 💡</h2>
-            <p className="text-sm text-zinc-400 mb-3">
-              Say something related to your word (don't expose it!)
-            </p>
-
+            <p className="text-sm text-zinc-400 mb-3">Say something related to your word (don't expose it!)</p>
             {isSpectator ? (
-              <p className="text-center text-amber-300">
-                Spectators cannot submit hints.
-              </p>
+              <p className="text-center text-amber-300">Spectators cannot submit hints.</p>
             ) : !submittedHint ? (
               <>
                 <input
@@ -321,9 +306,7 @@ function Game() {
                 </Button>
               </>
             ) : (
-              <p className="text-center text-green-400">
-                ✅ Hint submitted! Waiting for others...
-              </p>
+              <p className="text-center text-green-400">✅ Hint submitted! Waiting for others...</p>
             )}
           </Card>
         )}
@@ -332,28 +315,20 @@ function Game() {
         {phase === "voting" && (
           <Card className="p-8">
             <h2 className="text-lg font-semibold mb-3">All Hints & Vote 🗳️</h2>
-            <p className="text-sm text-zinc-400 mb-4">
-              Read everyone's hints and vote for the traitor.
-            </p>
-
+            <p className="text-sm text-zinc-400 mb-4">Read everyone's hints and vote for the traitor.</p>
             <div className="space-y-3 mb-4">
               {Object.entries(hints).map(([pid, playerHint]) => {
                 const player = room.players[pid];
                 return (
-                  <div key={pid} className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))] p-4 shadow-[0_0_35px_rgba(34,211,238,0.06)]">
-                    <div className="font-semibold text-cyan-300">
-                      {player?.name || "Unknown"}:
-                    </div>
+                  <div key={pid} className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))] p-4">
+                    <div className="font-semibold text-cyan-300">{player?.name || "Unknown"}:</div>
                     <div className="text-zinc-300 mt-1">"{playerHint}"</div>
                   </div>
                 );
               })}
             </div>
-
             {isSpectator ? (
-              <p className="text-center text-amber-300">
-                Spectators cannot vote.
-              </p>
+              <p className="text-center text-amber-300">Spectators cannot vote.</p>
             ) : !hasVoted ? (
               <>
                 <div className="mb-3 mt-6 border-t border-white/8 pt-4">
@@ -361,21 +336,19 @@ function Game() {
                   <p className="mt-2 text-sm text-zinc-400">Choose the player you think is the traitor.</p>
                 </div>
                 <div className="space-y-2">
-                  {activePlayers
-                    .filter((p) => p.id !== playerId)
-                    .map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => setSelectedPlayer(p.id)}
-                        className={`flex justify-between rounded-2xl border p-4 cursor-pointer transition ${
-                          selectedPlayer === p.id
-                            ? "border-rose-300/40 bg-rose-400/14 shadow-[0_0_40px_rgba(251,113,133,0.18)]"
-                            : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
-                        }`}
-                      >
-                        {p.name}
-                      </div>
-                    ))}
+                  {activePlayers.filter((p) => p.id !== playerId).map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedPlayer(p.id)}
+                      className={`flex justify-between rounded-2xl border p-4 cursor-pointer transition ${
+                        selectedPlayer === p.id
+                          ? "border-rose-300/40 bg-rose-400/14"
+                          : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
+                      }`}
+                    >
+                      {p.name}
+                    </div>
+                  ))}
                 </div>
                 <Button
                   className="mt-4 w-full"
@@ -391,9 +364,7 @@ function Game() {
                 </Button>
               </>
             ) : (
-              <p className="text-center text-green-400">
-                ✅ Vote submitted! Waiting for others...
-              </p>
+              <p className="text-center text-green-400">✅ Vote submitted! Waiting for others...</p>
             )}
           </Card>
         )}
@@ -405,19 +376,18 @@ function Game() {
             <p className="text-sm text-zinc-400 mb-4">
               {room.players[eliminatedInfo.playerId]?.name || "A player"} was voted out.
             </p>
-            <div className="rounded-2xl border border-white/10 bg-slate-950/82 p-4 shadow-[0_0_35px_rgba(34,211,238,0.08)]">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/82 p-4">
               <p className="text-white font-semibold">
                 {eliminatedInfo.wasTraitor
                   ? "They were the traitor! Citizens win this round."
                   : "They were not the traitor. The game continues..."}
               </p>
             </div>
-
             {!eliminatedInfo.wasTraitor && (
               <>
                 <p className="text-sm text-zinc-500 mt-3">
                   {isSpectator
-                    ? "Active players will continue to the next round while you spectate."
+                    ? "Active players will continue the next round while you spectate."
                     : "The game will continue once a player advances the round."}
                 </p>
                 {!isSpectator && (

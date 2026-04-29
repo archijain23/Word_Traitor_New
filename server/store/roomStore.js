@@ -21,15 +21,14 @@ function createRoom(roomId, hostId, name, socketId, config = {}) {
     votes: {},
     hasVoted: {},
     traitorId: null,
-    hints: {}, // Store hints for each player
-    currentPhase: "waiting", // waiting -> word_assignment -> hint_collection -> voting -> round_result -> game_over
+    hints: {},
+    currentPhase: "waiting",
     lastEliminated: null,
     messages: [],
     history: [],
     traitorIds: [],
     revealedRoles: null,
-    
-    // Configuration
+
     config: {
       numTraitors: config.numTraitors || 1,
       hintTime: config.hintTime || 30,
@@ -58,11 +57,7 @@ function joinRoom(roomId, playerId, socketId, name) {
 
   room.players[playerId] = player;
 
-  return {
-    room,
-    player,
-    reconnected: Boolean(existingPlayer),
-  };
+  return { room, player, reconnected: Boolean(existingPlayer) };
 }
 
 function getRoom(roomId) {
@@ -72,49 +67,33 @@ function getRoom(roomId) {
 function removePlayer(roomId, playerId) {
   const room = rooms[roomId];
   if (!room) return;
-
   delete room.players[playerId];
-
-  if (Object.keys(room.players).length === 0) {
-    delete rooms[roomId];
-  }
+  if (Object.keys(room.players).length === 0) delete rooms[roomId];
 }
 
 function markPlayerOffline(roomId, playerId) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return null;
-
   room.players[playerId] = {
     ...room.players[playerId],
     online: false,
     socketId: null,
     lastSeen: Date.now(),
   };
-
   return room.players[playerId];
 }
 
 function markPlayerEliminated(roomId, playerId) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return null;
-
-  room.players[playerId] = {
-    ...room.players[playerId],
-    isEliminated: true,
-  };
-
+  room.players[playerId] = { ...room.players[playerId], isEliminated: true };
   return room.players[playerId];
 }
 
 function setPlayerAuthToken(roomId, playerId, authToken) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return null;
-
-  room.players[playerId] = {
-    ...room.players[playerId],
-    authToken,
-  };
-
+  room.players[playerId] = { ...room.players[playerId], authToken };
   return room.players[playerId];
 }
 
@@ -122,15 +101,9 @@ function setPlayerAuthToken(roomId, playerId, authToken) {
 function addVote(roomId, voterId, targetId) {
   const room = rooms[roomId];
   if (!room) return;
-
   if (room.hasVoted[voterId]) return;
-
   room.hasVoted[voterId] = true;
-
-  if (!room.votes[targetId]) {
-    room.votes[targetId] = 0;
-  }
-
+  if (!room.votes[targetId]) room.votes[targetId] = 0;
   room.votes[targetId]++;
 }
 
@@ -138,19 +111,40 @@ function addVote(roomId, voterId, targetId) {
 function addHint(roomId, playerId, hint) {
   const room = rooms[roomId];
   if (!room) return;
-
   room.hints[playerId] = hint;
 }
 
-// 🔄 RESET ROUND
+// 🔄 RESET ROUND DATA (used between rounds mid-game)
 function resetRound(roomId) {
   const room = rooms[roomId];
   if (!room) return;
-
   room.votes = {};
   room.hasVoted = {};
   room.hints = {};
   room.revealedRoles = null;
+}
+
+// 🔁 RESET ENTIRE GAME (play again — keep players, restore to lobby)
+function resetGame(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  // Un-eliminate all players
+  Object.values(room.players).forEach((player) => {
+    player.isEliminated = false;
+    player.word = null;
+  });
+
+  room.votes = {};
+  room.hasVoted = {};
+  room.hints = {};
+  room.traitorId = null;
+  room.traitorIds = [];
+  room.revealedRoles = null;
+  room.lastEliminated = null;
+  room.winner = null;
+  room.status = "waiting";
+  room.currentPhase = "waiting";
 }
 
 module.exports = {
@@ -164,4 +158,5 @@ module.exports = {
   markPlayerEliminated,
   setPlayerAuthToken,
   resetRound,
+  resetGame,
 };

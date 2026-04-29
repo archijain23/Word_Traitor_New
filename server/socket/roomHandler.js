@@ -9,6 +9,7 @@ const {
   markPlayerEliminated,
   setPlayerAuthToken,
   resetRound,
+  resetGame,
 } = require("../store/roomStore");
 
 module.exports = (io, socket) => {
@@ -39,16 +40,12 @@ module.exports = (io, socket) => {
     currentPhase: room.currentPhase,
     winner: room.winner || null,
     players: buildPublicPlayers(room),
-    // ✅ FIX: During hint_collection, send hint COUNT only (not the hints themselves)
-    // so clients know how many have submitted without seeing content.
-    // Reveal full hints only when voting starts.
     hints:
       room.currentPhase === "voting" ||
       room.currentPhase === "round_result" ||
       room.currentPhase === "game_over"
         ? room.hints
         : {},
-    // ✅ FIX: Always include hintCount so frontend can show "X/Y hints submitted"
     hintCount: Object.keys(room.hints || {}).length,
     hasVoted: room.hasVoted || {},
     lastEliminated: room.lastEliminated,
@@ -114,16 +111,11 @@ module.exports = (io, socket) => {
   const attachToRoom = (roomId, playerId, socketId, name, authToken) => {
     const result = joinRoom(roomId, playerId, socketId, name);
     if (!result) return null;
-
-    if (authToken) {
-      setPlayerAuthToken(roomId, playerId, authToken);
-    }
-
+    if (authToken) setPlayerAuthToken(roomId, playerId, authToken);
     const { room, reconnected } = result;
     socket.join(roomId);
     currentRoom = roomId;
     currentPlayerId = playerId;
-
     return { room, reconnected };
   };
 
@@ -134,7 +126,6 @@ module.exports = (io, socket) => {
 
     const players = getActivePlayers(room);
     const numTraitors = room.config?.numTraitors || 1;
-
     if (players.length < 2) return;
 
     room.traitorIds = [];
@@ -232,32 +223,26 @@ module.exports = (io, socket) => {
     }
   };
 
-  // 🔄 START NEXT ROUND
+  // 🔄 START NEXT ROUND (mid-game, traitor still alive)
   const startNextRound = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
-
     resetRound(roomId);
     room.lastEliminated = null;
     room.status = "playing";
     room.currentPhase = "hint_collection";
-
     io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
     emitRoomUpdate(roomId, room);
   };
 
-  // 💡 END HINT COLLECTION — move to voting when all hints are in
+  // 💡 END HINT COLLECTION
   const endHintCollection = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
-
     const totalPlayers = getActivePlayers(room).length;
     const totalHints = Object.keys(room.hints).length;
-
     if (totalHints >= totalPlayers) {
       room.currentPhase = "voting";
-      // ✅ FIX: Send hints in the phase_changed event so frontend
-      // receives them atomically when switching to voting phase
       io.to(roomId).emit("phase_changed", { phase: "voting", hints: room.hints });
       emitRoomUpdate(roomId, room);
     }
@@ -266,14 +251,8 @@ module.exports = (io, socket) => {
   // ✅ CREATE ROOM
   socket.on("create_room", ({ roomId, name, playerId, authToken }) => {
     const resolvedPlayerId = playerId || socket.id;
-    if (!roomId || !name || !authToken) {
-      socket.emit("error", "Missing room or session details");
-      return;
-    }
-    if (getRoom(roomId)) {
-      socket.emit("error", "Room already exists");
-      return;
-    }
+    if (!roomId || !name || !authToken) { socket.emit("error", "Missing room or session details"); return; }
+    if (getRoom(roomId)) { socket.emit("error", "Room already exists"); return; }
     createRoom(roomId, resolvedPlayerId, name, socket.id, { authToken });
     socket.join(roomId);
     currentRoom = roomId;
@@ -286,33 +265,20 @@ module.exports = (io, socket) => {
   // ✅ JOIN ROOM
   socket.on("join_room", ({ roomId, name, playerId, authToken }) => {
     const resolvedPlayerId = playerId || socket.id;
-    if (!roomId || !name || !authToken) {
-      socket.emit("error", "Missing room or session details");
-      return;
-    }
+    if (!roomId || !name || !authToken) { socket.emit("error", "Missing room or session details"); return; }
     const existingRoom = getRoom(roomId);
-    if (!existingRoom) {
-      socket.emit("error", "Room not found");
-      return;
-    }
+    if (!existingRoom) { socket.emit("error", "Room not found"); return; }
     const existingPlayer = existingRoom.players[resolvedPlayerId];
     if (existingPlayer && existingPlayer.authToken !== authToken) {
-      socket.emit("error", "Player session could not be verified");
-      return;
+      socket.emit("error", "Player session could not be verified"); return;
     }
     const result = attachToRoom(roomId, resolvedPlayerId, socket.id, name, authToken);
-    if (!result) {
-      socket.emit("error", "Room not found");
-      return;
-    }
+    if (!result) { socket.emit("error", "Room not found"); return; }
     const { room, reconnected } = result;
     emitRoomUpdate(roomId, room);
     syncPlayerState(socket, room, resolvedPlayerId);
     if (reconnected) {
-      io.to(roomId).emit("PLAYER_RECONNECTED", {
-        playerId: resolvedPlayerId,
-        room: buildPublicRoom(room),
-      });
+      io.to(roomId).emit("PLAYER_RECONNECTED", { playerId: resolvedPlayerId, room: buildPublicRoom(room) });
     }
   });
 
@@ -321,10 +287,7 @@ module.exports = (io, socket) => {
     if (!roomId || !playerId || !authToken) return;
     const room = getRoom(roomId);
     if (!room) { socket.emit("error", "Room not found"); return; }
-    if (!isAuthorizedPlayer(room, playerId, authToken)) {
-      socket.emit("error", "Player session not found");
-      return;
-    }
+    if (!isAuthorizedPlayer(room, playerId, authToken)) { socket.emit("error", "Player session not found"); return; }
     const existingPlayer = room.players[playerId];
     const result = attachToRoom(roomId, playerId, socket.id, existingPlayer.name, authToken);
     if (!result) return;
@@ -347,10 +310,7 @@ module.exports = (io, socket) => {
   socket.on("start_game", ({ roomId, config }) => {
     const room = getRoom(roomId);
     if (!room) return;
-    if (currentPlayerId !== room.hostId) {
-      socket.emit("error", "Only the host can start the game");
-      return;
-    }
+    if (currentPlayerId !== room.hostId) { socket.emit("error", "Only the host can start the game"); return; }
     if (config) room.config = { ...room.config, ...config };
     startGame(roomId);
   });
@@ -365,7 +325,6 @@ module.exports = (io, socket) => {
     if (!currentPlayer || !targetPlayer) return;
     if (currentPlayer.isEliminated || targetPlayer.isEliminated) return;
     if (currentPlayerId === targetId) return;
-    // ✅ FIX: prevent double voting
     if (room.hasVoted?.[currentPlayerId]) return;
     addVote(roomId, currentPlayerId, targetId);
     emitRoomUpdate(roomId, room);
@@ -380,7 +339,6 @@ module.exports = (io, socket) => {
     if (!room) return;
     if (room.currentPhase !== "hint_collection") return;
     if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) return;
-    // ✅ FIX: prevent duplicate hint submission
     if (room.hints?.[currentPlayerId]) return;
     if (!hint || !hint.trim()) return;
     addHint(roomId, currentPlayerId, hint.trim());
@@ -388,7 +346,7 @@ module.exports = (io, socket) => {
     endHintCollection(roomId);
   });
 
-  // ▶️ CONTINUE ROUND
+  // ▶️ CONTINUE ROUND (mid-game)
   socket.on("continue_round", ({ roomId }) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -397,16 +355,31 @@ module.exports = (io, socket) => {
     startNextRound(roomId);
   });
 
+  // 🔁 PLAY AGAIN — reset room to lobby, keep all players
+  socket.on("play_again", ({ roomId }) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+    // Only host can trigger play again
+    if (currentPlayerId !== room.hostId) {
+      socket.emit("error", "Only the host can start a new game");
+      return;
+    }
+    // Only valid after game_over
+    if (room.status !== "game_over") return;
+
+    resetGame(roomId);
+    emitRoomUpdate(roomId, room);
+    // Tell all clients to go back to lobby
+    io.to(roomId).emit("return_to_lobby", { roomId });
+  });
+
   // ❌ DISCONNECT
   socket.on("disconnect", () => {
     if (!currentRoom || !currentPlayerId) return;
     const room = getRoom(currentRoom);
     if (!room) return;
     markPlayerOffline(currentRoom, currentPlayerId);
-    io.to(currentRoom).emit("PLAYER_DISCONNECTED", {
-      playerId: currentPlayerId,
-      room: buildPublicRoom(room),
-    });
+    io.to(currentRoom).emit("PLAYER_DISCONNECTED", { playerId: currentPlayerId, room: buildPublicRoom(room) });
     emitRoomUpdate(currentRoom, room);
   });
 };
