@@ -153,14 +153,14 @@ module.exports = (io, socket) => {
     ["Safeword", "Password"],
     ["Swingers", "Dance Partners"],
     ["Kink", "Quirk"],
-    ["Bondage", "Yoga Strap"],
+    
     ["Sugar Daddy", "Sponsor"],
     ["Weed", "Herb"],
     ["Booty Call", "Late Night Call"],
     ["Erotic", "Romantic"],
     ["Sexting", "Texting"],
     ["Playboy", "Magazine"],
-    ["Cheating", "Lying"],
+   
   ];
 
   const buildStateSync = (room, playerId) => ({
