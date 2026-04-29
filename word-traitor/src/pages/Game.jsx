@@ -12,6 +12,8 @@ import {
   rememberRoom,
 } from "../lib/session";
 
+const WORD_DISPLAY_SECONDS = 15;
+
 function Game() {
   const { roomId } = useParams();
   const playerId = getStoredPlayerId();
@@ -23,7 +25,7 @@ function Game() {
   const [hint, setHint] = useState("");
   const [hints, setHints] = useState({});
   const [submittedHint, setSubmittedHint] = useState(false);
-  const [countdown, setCountdown] = useState(30);
+  const [countdown, setCountdown] = useState(WORD_DISPLAY_SECONDS);
   const [eliminatedInfo, setEliminatedInfo] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [continueClicked, setContinueClicked] = useState(false);
@@ -39,19 +41,24 @@ function Game() {
     ? Object.values(room.players).filter((p) => !p.isEliminated)
     : [];
 
-  // ⏰ COUNTDOWN TIMER
+  // ⏰ WORD REVEAL COUNTDOWN — 15s then auto-advance to hint_collection
   useEffect(() => {
-    let timer;
-    if (phase === "word_assignment") {
-      timer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) { clearInterval(timer); return 0; }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => { if (timer) clearInterval(timer); };
-  }, [phase]);
+    if (phase !== "word_assignment") return;
+    setCountdown(WORD_DISPLAY_SECONDS);
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          // Only the first player (or everyone independently) transitions the phase.
+          // We emit a client-side phase advance; server guards against duplicate triggers.
+          socket.emit("word_reveal_done", { roomId });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [phase, roomId]);
 
   // 🔌 SOCKET LISTENERS
   useEffect(() => {
@@ -95,7 +102,8 @@ function Game() {
         setHasVoted(false); setSelectedPlayer(null);
       }
       if (data.phase === "word_assignment") {
-        setCountdown(30); setSubmittedHint(false); setHint("");
+        setCountdown(WORD_DISPLAY_SECONDS);
+        setSubmittedHint(false); setHint("");
         setHints({}); setContinueClicked(false);
       }
       if (data.phase === "round_result") {
@@ -104,13 +112,10 @@ function Game() {
       }
     };
 
-    // ✅ Navigate back to lobby for everyone when host triggers play_again
     const handleReturnToLobby = ({ roomId: rid }) => {
       navigate(`/lobby/${rid}`, { state: { skipNamePrompt: true } });
     };
 
-    // game_over no longer navigates away — players see the result inline
-    // and wait for host to trigger play_again or they can leave
     const handleGameOver = () => {};
 
     const handleError = () => {
@@ -137,7 +142,10 @@ function Game() {
 
   // 🎯 PRIVATE WORD
   useEffect(() => {
-    const handleGameStarted = (data) => { setWord(data.word); setCountdown(30); };
+    const handleGameStarted = (data) => {
+      setWord(data.word);
+      setCountdown(WORD_DISPLAY_SECONDS);
+    };
     socket.on("game_started", handleGameStarted);
     return () => { socket.off("game_started", handleGameStarted); };
   }, []);
@@ -167,6 +175,7 @@ function Game() {
   }
 
   const isHost = playerId === room.hostId;
+  const wordProgress = ((WORD_DISPLAY_SECONDS - countdown) / WORD_DISPLAY_SECONDS) * 100;
 
   return (
     <Layout>
@@ -209,8 +218,6 @@ function Game() {
                 ? "The traitor has been unmasked."
                 : "The traitor blended in and survived."}
             </p>
-
-            {/* Reveal roles */}
             {room.revealedRoles && (
               <div className="space-y-2 mb-8 text-left">
                 <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">Roles Revealed</p>
@@ -230,8 +237,6 @@ function Game() {
                 ))}
               </div>
             )}
-
-            {/* Host: Play Again | Everyone: Leave */}
             <div className="flex flex-col gap-3">
               {isHost && (
                 <Button
@@ -245,10 +250,7 @@ function Game() {
                 <p className="text-sm text-zinc-500">Waiting for the host to start a new game...</p>
               )}
               <button
-                onClick={() => {
-                  socket.emit("leave_room", { roomId });
-                  navigate("/");
-                }}
+                onClick={() => { socket.emit("leave_room", { roomId }); navigate("/"); }}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm text-zinc-400 transition hover:border-white/20 hover:text-white"
               >
                 Leave Room
@@ -257,15 +259,59 @@ function Game() {
           </Card>
         )}
 
-        {/* 🎯 WORD ASSIGNMENT */}
+        {/* 🎯 WORD ASSIGNMENT — 15s reveal with progress bar */}
         {phase === "word_assignment" && (
           <Card className="p-8 text-center">
-            <h2 className="text-lg text-zinc-300/75 mb-2">Your Secret Word</h2>
-            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)]">{word}</h1>
-            <div className="text-center mt-4">
-              <div className="text-3xl font-black text-amber-300 drop-shadow-[0_0_18px_rgba(252,211,77,0.3)]">{countdown}s</div>
-              <p className="text-sm text-zinc-400 mt-2">Memorize this word... Hint phase starts soon!</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Your Secret Word</p>
+            <div className="mb-6">
+              <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)]">
+                {word ?? "..."}
+              </span>
             </div>
+
+            {/* Countdown ring + number */}
+            <div className="flex items-center justify-center gap-4 mb-6">
+              <div className="relative w-16 h-16">
+                <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+                  <circle
+                    cx="32" cy="32" r="28"
+                    fill="none"
+                    stroke={countdown <= 5 ? "#f87171" : countdown <= 10 ? "#fbbf24" : "#22d3ee"}
+                    strokeWidth="5"
+                    strokeDasharray={`${2 * Math.PI * 28}`}
+                    strokeDashoffset={`${2 * Math.PI * 28 * (countdown / WORD_DISPLAY_SECONDS)}`}
+                    strokeLinecap="round"
+                    style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
+                  />
+                </svg>
+                <span className={`absolute inset-0 flex items-center justify-center text-xl font-black ${
+                  countdown <= 5 ? "text-red-400" : countdown <= 10 ? "text-amber-400" : "text-cyan-300"
+                }`}>
+                  {countdown}
+                </span>
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-semibold text-zinc-200">Memorize your word!</p>
+                <p className="text-xs text-zinc-500">Hint phase starts in {countdown}s</p>
+              </div>
+            </div>
+
+            {/* Linear drain bar */}
+            <div className="w-full rounded-full bg-white/6 h-2 overflow-hidden">
+              <div
+                className="h-2 rounded-full transition-all duration-1000 linear"
+                style={{
+                  width: `${wordProgress}%`,
+                  background: countdown <= 5
+                    ? "linear-gradient(90deg,#f87171,#ef4444)"
+                    : countdown <= 10
+                    ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
+                    : "linear-gradient(90deg,#22d3ee,#a855f7)",
+                }}
+              />
+            </div>
+            <p className="text-xs text-zinc-600 mt-3">The hint phase will begin automatically</p>
           </Card>
         )}
 
