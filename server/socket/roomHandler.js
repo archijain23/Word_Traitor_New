@@ -39,12 +39,18 @@ module.exports = (io, socket) => {
     currentPhase: room.currentPhase,
     winner: room.winner || null,
     players: buildPublicPlayers(room),
+    // ✅ FIX: During hint_collection, send hint COUNT only (not the hints themselves)
+    // so clients know how many have submitted without seeing content.
+    // Reveal full hints only when voting starts.
     hints:
       room.currentPhase === "voting" ||
       room.currentPhase === "round_result" ||
       room.currentPhase === "game_over"
         ? room.hints
         : {},
+    // ✅ FIX: Always include hintCount so frontend can show "X/Y hints submitted"
+    hintCount: Object.keys(room.hints || {}).length,
+    hasVoted: room.hasVoted || {},
     lastEliminated: room.lastEliminated,
     config: room.config,
     revealedRoles: room.revealedRoles || null,
@@ -129,14 +135,10 @@ module.exports = (io, socket) => {
     const players = getActivePlayers(room);
     const numTraitors = room.config?.numTraitors || 1;
 
-    if (players.length < 2) {
-      return;
-    }
+    if (players.length < 2) return;
 
-    // 🎯 pick traitors (can be multiple)
     room.traitorIds = [];
     const selectedIndexes = new Set();
-    
     while (room.traitorIds.length < Math.min(numTraitors, players.length - 1)) {
       const idx = Math.floor(Math.random() * players.length);
       if (!selectedIndexes.has(idx)) {
@@ -144,10 +146,8 @@ module.exports = (io, socket) => {
         room.traitorIds.push(players[idx].id);
       }
     }
-    
-    room.traitorId = room.traitorIds[0]; // Keep for backward compatibility
+    room.traitorId = room.traitorIds[0];
 
-    // 🎯 pick word pair based on room configuration
     const use18Plus = room.config?.use18Plus;
     const availableWordPairs = use18Plus
       ? [...standardWordPairs, ...adultWordPairs]
@@ -158,33 +158,24 @@ module.exports = (io, socket) => {
     players.forEach((player) => {
       const isTraitor = room.traitorIds.includes(player.id);
       const assignedWord = isTraitor ? wordB : wordA;
-
       room.players[player.id].word = assignedWord;
-
       if (player.socketId) {
-        io.to(player.socketId).emit("game_started", {
-          word: assignedWord,
-        });
+        io.to(player.socketId).emit("game_started", { word: assignedWord });
       }
     });
 
-    // ✅ reset round data
     resetRound(roomId);
-
     room.status = "playing";
     room.currentPhase = "word_assignment";
-
     emitRoomUpdate(roomId, room);
 
-    // ⏰ Start hint collection phase after a delay (using hintTime config)
-    const wordAssignmentTime = 30000; // Always 30 seconds to memorize
+    const wordAssignmentTime = 30000;
     setTimeout(() => {
-      if (!getRoom(roomId) || room.currentPhase !== "word_assignment") {
-        return;
-      }
-      room.currentPhase = "hint_collection";
+      const r = getRoom(roomId);
+      if (!r || r.currentPhase !== "word_assignment") return;
+      r.currentPhase = "hint_collection";
       io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
-      emitRoomUpdate(roomId, room);
+      emitRoomUpdate(roomId, r);
     }, wordAssignmentTime);
   };
 
@@ -195,81 +186,50 @@ module.exports = (io, socket) => {
 
     let maxVotes = -1;
     let candidates = [];
-
-    for (const playerId in room.votes) {
-      if (room.votes[playerId] > maxVotes) {
-        maxVotes = room.votes[playerId];
-        candidates = [playerId];
-      } else if (room.votes[playerId] === maxVotes) {
-        candidates.push(playerId);
+    for (const pid in room.votes) {
+      if (room.votes[pid] > maxVotes) {
+        maxVotes = room.votes[pid];
+        candidates = [pid];
+      } else if (room.votes[pid] === maxVotes) {
+        candidates.push(pid);
       }
     }
 
-    const eliminatedPlayer =
-      candidates[Math.floor(Math.random() * candidates.length)];
-
+    const eliminatedPlayer = candidates[Math.floor(Math.random() * candidates.length)];
     const wasTraitor = room.traitorIds.includes(eliminatedPlayer);
 
-    // remove player
     markPlayerEliminated(roomId, eliminatedPlayer);
-    room.lastEliminated = {
-      playerId: eliminatedPlayer,
-      wasTraitor,
-    };
+    room.lastEliminated = { playerId: eliminatedPlayer, wasTraitor };
 
-    // 🎯 RESULT EVENT
-    io.to(roomId).emit("player_eliminated", {
-      playerId: eliminatedPlayer,
-      wasTraitor,
-    });
+    io.to(roomId).emit("player_eliminated", { playerId: eliminatedPlayer, wasTraitor });
 
     room.currentPhase = "round_result";
-    io.to(roomId).emit("phase_changed", {
-      phase: "round_result",
-      eliminatedPlayer,
-      wasTraitor,
-    });
+    io.to(roomId).emit("phase_changed", { phase: "round_result", eliminatedPlayer, wasTraitor });
     emitRoomUpdate(roomId, room);
 
-    // 🏆 WIN CONDITIONS
     if (wasTraitor) {
       room.status = "game_over";
       room.currentPhase = "game_over";
       room.winner = "civilians";
       room.revealedRoles = Object.fromEntries(
-        Object.keys(room.players).map((playerId) => [
-          playerId,
-          room.traitorIds.includes(playerId) ? "traitor" : "citizen",
-        ])
+        Object.keys(room.players).map((pid) => [pid, room.traitorIds.includes(pid) ? "traitor" : "citizen"])
       );
-
       emitRoomUpdate(roomId, room);
-      io.to(roomId).emit("game_over", {
-        winner: "civilians",
-      });
+      io.to(roomId).emit("game_over", { winner: "civilians" });
       return;
     }
 
     const remainingPlayers = getActivePlayers(room).length;
-
     if (remainingPlayers <= 2) {
       room.status = "game_over";
       room.currentPhase = "game_over";
       room.winner = "traitor";
       room.revealedRoles = Object.fromEntries(
-        Object.keys(room.players).map((playerId) => [
-          playerId,
-          room.traitorIds.includes(playerId) ? "traitor" : "citizen",
-        ])
+        Object.keys(room.players).map((pid) => [pid, room.traitorIds.includes(pid) ? "traitor" : "citizen"])
       );
-
       emitRoomUpdate(roomId, room);
-      io.to(roomId).emit("game_over", {
-        winner: "traitor",
-      });
-      return;
+      io.to(roomId).emit("game_over", { winner: "traitor" });
     }
-
   };
 
   // 🔄 START NEXT ROUND
@@ -277,10 +237,8 @@ module.exports = (io, socket) => {
     const room = getRoom(roomId);
     if (!room) return;
 
-    // Reset round data
     resetRound(roomId);
     room.lastEliminated = null;
-
     room.status = "playing";
     room.currentPhase = "hint_collection";
 
@@ -288,7 +246,7 @@ module.exports = (io, socket) => {
     emitRoomUpdate(roomId, room);
   };
 
-  // 💡 END HINT COLLECTION
+  // 💡 END HINT COLLECTION — move to voting when all hints are in
   const endHintCollection = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -296,14 +254,11 @@ module.exports = (io, socket) => {
     const totalPlayers = getActivePlayers(room).length;
     const totalHints = Object.keys(room.hints).length;
 
-    if (totalHints === totalPlayers) {
-      // All hints collected, show them and start voting together
+    if (totalHints >= totalPlayers) {
       room.currentPhase = "voting";
-
-      io.to(roomId).emit("phase_changed", {
-        phase: "voting",
-        hints: room.hints,
-      });
+      // ✅ FIX: Send hints in the phase_changed event so frontend
+      // receives them atomically when switching to voting phase
+      io.to(roomId).emit("phase_changed", { phase: "voting", hints: room.hints });
       emitRoomUpdate(roomId, room);
     }
   };
@@ -319,13 +274,10 @@ module.exports = (io, socket) => {
       socket.emit("error", "Room already exists");
       return;
     }
-
     createRoom(roomId, resolvedPlayerId, name, socket.id, { authToken });
     socket.join(roomId);
-
     currentRoom = roomId;
     currentPlayerId = resolvedPlayerId;
-
     const room = getRoom(roomId);
     emitRoomUpdate(roomId, room);
     syncPlayerState(socket, room, resolvedPlayerId);
@@ -338,31 +290,24 @@ module.exports = (io, socket) => {
       socket.emit("error", "Missing room or session details");
       return;
     }
-
     const existingRoom = getRoom(roomId);
     if (!existingRoom) {
       socket.emit("error", "Room not found");
       return;
     }
-
     const existingPlayer = existingRoom.players[resolvedPlayerId];
     if (existingPlayer && existingPlayer.authToken !== authToken) {
       socket.emit("error", "Player session could not be verified");
       return;
     }
-
     const result = attachToRoom(roomId, resolvedPlayerId, socket.id, name, authToken);
-
     if (!result) {
       socket.emit("error", "Room not found");
       return;
     }
-
     const { room, reconnected } = result;
-
     emitRoomUpdate(roomId, room);
     syncPlayerState(socket, room, resolvedPlayerId);
-
     if (reconnected) {
       io.to(roomId).emit("PLAYER_RECONNECTED", {
         playerId: resolvedPlayerId,
@@ -371,58 +316,34 @@ module.exports = (io, socket) => {
     }
   });
 
+  // 🔁 RECONNECT
   socket.on("RECONNECT_PLAYER", ({ roomId, playerId, authToken }) => {
     if (!roomId || !playerId || !authToken) return;
-
     const room = getRoom(roomId);
-    if (!room) {
-      socket.emit("error", "Room not found");
-      return;
-    }
-
+    if (!room) { socket.emit("error", "Room not found"); return; }
     if (!isAuthorizedPlayer(room, playerId, authToken)) {
       socket.emit("error", "Player session not found");
       return;
     }
-
     const existingPlayer = room.players[playerId];
-    const result = attachToRoom(
-      roomId,
-      playerId,
-      socket.id,
-      existingPlayer.name,
-      authToken
-    );
+    const result = attachToRoom(roomId, playerId, socket.id, existingPlayer.name, authToken);
     if (!result) return;
-
     emitRoomUpdate(roomId, result.room);
-    io.to(roomId).emit("PLAYER_RECONNECTED", {
-      playerId,
-      room: buildPublicRoom(result.room),
-    });
+    io.to(roomId).emit("PLAYER_RECONNECTED", { playerId, room: buildPublicRoom(result.room) });
     syncPlayerState(socket, result.room, playerId);
   });
 
   // ⬅️ LEAVE ROOM
   socket.on("leave_room", ({ roomId }) => {
     if (!roomId) return;
-
     socket.leave(roomId);
     removePlayer(roomId, currentPlayerId || socket.id);
-
-    if (currentRoom === roomId) {
-      currentRoom = null;
-      currentPlayerId = null;
-    }
-
+    if (currentRoom === roomId) { currentRoom = null; currentPlayerId = null; }
     const room = getRoom(roomId);
-
-    if (room) {
-      emitRoomUpdate(roomId, room);
-    }
+    if (room) emitRoomUpdate(roomId, room);
   });
 
-  // ✅ START GAME
+  // ▶️ START GAME
   socket.on("start_game", ({ roomId, config }) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -430,13 +351,7 @@ module.exports = (io, socket) => {
       socket.emit("error", "Only the host can start the game");
       return;
     }
-
-    if (config) {
-      room.config = {
-        ...room.config,
-        ...config,
-      };
-    }
+    if (config) room.config = { ...room.config, ...config };
     startGame(roomId);
   });
 
@@ -445,41 +360,31 @@ module.exports = (io, socket) => {
     const room = getRoom(roomId);
     if (!room) return;
     if (room.currentPhase !== "voting") return;
-
     const currentPlayer = room.players[currentPlayerId];
     const targetPlayer = room.players[targetId];
     if (!currentPlayer || !targetPlayer) return;
     if (currentPlayer.isEliminated || targetPlayer.isEliminated) return;
-
-    // ❌ prevent self vote
     if (currentPlayerId === targetId) return;
-
+    // ✅ FIX: prevent double voting
+    if (room.hasVoted?.[currentPlayerId]) return;
     addVote(roomId, currentPlayerId, targetId);
-
     emitRoomUpdate(roomId, room);
-
     const totalPlayers = getActivePlayers(room).length;
     const totalVotes = Object.keys(room.hasVoted).length;
-
-    if (totalVotes === totalPlayers) {
-      endVoting(roomId);
-    }
+    if (totalVotes >= totalPlayers) endVoting(roomId);
   });
 
   // 💡 SUBMIT HINT
   socket.on("submit_hint", ({ roomId, hint }) => {
     const room = getRoom(roomId);
     if (!room) return;
-
     if (room.currentPhase !== "hint_collection") return;
-    if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) {
-      return;
-    }
-
-    addHint(roomId, currentPlayerId, hint);
-
+    if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) return;
+    // ✅ FIX: prevent duplicate hint submission
+    if (room.hints?.[currentPlayerId]) return;
+    if (!hint || !hint.trim()) return;
+    addHint(roomId, currentPlayerId, hint.trim());
     emitRoomUpdate(roomId, room);
-
     endHintCollection(roomId);
   });
 
@@ -487,24 +392,17 @@ module.exports = (io, socket) => {
   socket.on("continue_round", ({ roomId }) => {
     const room = getRoom(roomId);
     if (!room) return;
-
     if (room.currentPhase !== "round_result") return;
-    if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) {
-      return;
-    }
-
+    if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) return;
     startNextRound(roomId);
   });
 
   // ❌ DISCONNECT
   socket.on("disconnect", () => {
     if (!currentRoom || !currentPlayerId) return;
-
     const room = getRoom(currentRoom);
     if (!room) return;
-
     markPlayerOffline(currentRoom, currentPlayerId);
-
     io.to(currentRoom).emit("PLAYER_DISCONNECTED", {
       playerId: currentPlayerId,
       room: buildPublicRoom(room),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import Card from "../components/ui/Card";
@@ -18,7 +18,7 @@ function Game() {
 
   const [room, setRoom] = useState(null);
   const [word, setWord] = useState(null);
-  const [phase, setPhase] = useState("word_assignment"); // word_assignment → hint_collection → voting → round_result
+  const [phase, setPhase] = useState("word_assignment");
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [hint, setHint] = useState("");
   const [hints, setHints] = useState({});
@@ -26,13 +26,20 @@ function Game() {
   const [countdown, setCountdown] = useState(30);
   const [eliminatedInfo, setEliminatedInfo] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
+  const [continueClicked, setContinueClicked] = useState(false);
+
+  // Keep a ref to the current phase so event handlers always see latest value
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   const name = getStoredPlayerName();
   const navigate = useNavigate();
   const me = playerId ? room?.players?.[playerId] : null;
   const isSpectator = Boolean(me?.isEliminated);
   const activePlayers = room
-    ? Object.values(room.players).filter((player) => !player.isEliminated)
+    ? Object.values(room.players).filter((p) => !p.isEliminated)
     : [];
 
   // ⏰ COUNTDOWN TIMER
@@ -49,10 +56,7 @@ function Game() {
         });
       }, 1000);
     }
-
-    return () => {
-      if (timer) clearInterval(timer);
-    };
+    return () => { if (timer) clearInterval(timer); };
   }, [phase]);
 
   // 🔌 ROOM UPDATES
@@ -62,22 +66,27 @@ function Game() {
 
       if (roomData.currentPhase) {
         setPhase(roomData.currentPhase);
+        phaseRef.current = roomData.currentPhase;
       }
 
       if (roomData.lastEliminated) {
         setEliminatedInfo(roomData.lastEliminated);
       }
 
-      if (roomData.hints) {
-        setHints(roomData.hints);
-        setSubmittedHint(Boolean(playerId && roomData.hints[playerId]));
+      // ✅ FIX: Only update hints from roomData when NOT in hint_collection phase.
+      // During hint_collection, server intentionally sends hints:{} to keep them secret.
+      // Updating from that would wipe local submittedHint state and cause the glitch.
+      const currentPhase = roomData.currentPhase || phaseRef.current;
+      if (currentPhase !== "hint_collection") {
+        if (roomData.hints && Object.keys(roomData.hints).length > 0) {
+          setHints(roomData.hints);
+        }
+        if (roomData.hasVoted) {
+          setHasVoted(Boolean(playerId && roomData.hasVoted[playerId]));
+        }
       }
 
-      if (roomData.hasVoted) {
-        setHasVoted(Boolean(playerId && roomData.hasVoted[playerId]));
-      }
-
-      const me = playerId ? roomData.players[playerId] : null;
+      const me = playerId ? roomData.players?.[playerId] : null;
       if (me?.word) {
         setWord(me.word);
       }
@@ -89,40 +98,67 @@ function Game() {
 
     const handleStateSync = (state) => {
       applyRoomState(state.room);
-      setWord(state.wordProgress?.word || null);
-      setHints(state.wordProgress?.hints || {});
-      setHasVoted(Boolean(playerId && state.wordProgress?.hasVoted?.[playerId]));
-      setSubmittedHint(Boolean(playerId && state.wordProgress?.hints?.[playerId]));
+      if (state.wordProgress?.word) {
+        setWord(state.wordProgress.word);
+      }
+      // Only restore hints/votes if not in hint_collection phase
+      if (state.room?.currentPhase !== "hint_collection") {
+        if (state.wordProgress?.hints) {
+          setHints(state.wordProgress.hints);
+        }
+        if (state.wordProgress?.hasVoted) {
+          setHasVoted(Boolean(playerId && state.wordProgress.hasVoted[playerId]));
+        }
+      }
+      // Restore submittedHint only if hints are available
+      if (state.wordProgress?.hints?.[playerId]) {
+        setSubmittedHint(true);
+      }
     };
 
-    socket.on("phase_changed", (data) => {
+    // ✅ FIX: Named handler so it can be properly removed
+    const handlePhaseChanged = (data) => {
       setPhase(data.phase);
-      if (data.hints) {
-        setHints(data.hints);
-      }
+      phaseRef.current = data.phase;
+
       if (data.phase === "hint_collection") {
+        // Fresh round — reset hint state
         setSubmittedHint(false);
         setHint("");
+        setHints({});
         setEliminatedInfo(null);
+        setContinueClicked(false);
       }
+
+      if (data.phase === "voting") {
+        // Hints are now revealed by server in this event
+        if (data.hints) {
+          setHints(data.hints);
+        }
+        setHasVoted(false);
+        setSelectedPlayer(null);
+      }
+
+      if (data.phase === "word_assignment") {
+        setCountdown(30);
+        setSubmittedHint(false);
+        setHint("");
+        setHints({});
+        setContinueClicked(false);
+      }
+
       if (data.phase === "round_result") {
         setEliminatedInfo({
           playerId: data.eliminatedPlayer,
           wasTraitor: data.wasTraitor,
         });
+        setContinueClicked(false);
       }
-      // Reset countdown for new phases
-      if (data.phase === "word_assignment") {
-        setCountdown(30);
-      }
-      if (data.phase === "voting") {
-        setHasVoted(false);
-      }
-    });
+    };
 
-    socket.on("game_over", () => {
+    const handleGameOver = () => {
       navigate(`/game-over/${roomId}`);
-    });
+    };
 
     const handleError = () => {
       clearRememberedRoom(roomId);
@@ -131,13 +167,15 @@ function Game() {
 
     socket.on("room_updated", handleRoomUpdated);
     socket.on("STATE_SYNC", handleStateSync);
+    socket.on("phase_changed", handlePhaseChanged);
+    socket.on("game_over", handleGameOver);
     socket.on("error", handleError);
 
     return () => {
       socket.off("room_updated", handleRoomUpdated);
       socket.off("STATE_SYNC", handleStateSync);
-      socket.off("phase_changed");
-      socket.off("game_over");
+      socket.off("phase_changed", handlePhaseChanged);
+      socket.off("game_over", handleGameOver);
       socket.off("error", handleError);
     };
   }, [navigate, playerId, roomId]);
@@ -148,21 +186,15 @@ function Game() {
       setWord(data.word);
       setCountdown(30);
     };
-
     socket.on("game_started", handleGameStarted);
-
-    return () => {
-      socket.off("game_started", handleGameStarted);
-    };
+    return () => { socket.off("game_started", handleGameStarted); };
   }, []);
 
-  // 🚀 Join room (important if user refreshes)
+  // 🚀 Join room on mount / refresh
   useEffect(() => {
     if (!name) return;
-
     const session = buildPlayerSession(name);
     rememberRoom(roomId);
-
     socket.emit("join_room", {
       roomId,
       name,
@@ -171,20 +203,15 @@ function Game() {
     });
   }, [roomId, name]);
 
+  // 🔁 Reconnect
   useEffect(() => {
     if (!roomId || !playerId) return;
-
-    const handleReconnect = () => {
-      emitReconnectPlayer(roomId);
-    };
-
+    const handleReconnect = () => { emitReconnectPlayer(roomId); };
     socket.io.on("reconnect", handleReconnect);
-    return () => {
-      socket.io.off("reconnect", handleReconnect);
-    };
+    return () => { socket.io.off("reconnect", handleReconnect); };
   }, [roomId, playerId]);
 
-  // ⛔ loading
+  // ⛔ Loading
   if (!room) {
     return (
       <Layout>
@@ -197,6 +224,8 @@ function Game() {
   return (
     <Layout>
       <div className="space-y-6">
+
+        {/* Header */}
         <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
@@ -213,7 +242,7 @@ function Game() {
             <div className="rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)]">
               <div className="text-[11px] uppercase tracking-[0.32em] text-fuchsia-200/70">Current Phase</div>
               <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">
-                {phase.replace("_", " ")}
+                {phase.replace(/_/g, " ")}
               </div>
             </div>
           </div>
@@ -225,24 +254,20 @@ function Game() {
           )}
         </div>
 
-        {/* 🏠 ROOM */}
+        {/* Room ID */}
         <Card className="p-6">
           <h2 className="text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">
             Room: {room.roomId}
           </h2>
         </Card>
 
-        {/* 🎯 WORD ASSIGNMENT PHASE */}
+        {/* 🎯 WORD ASSIGNMENT */}
         {phase === "word_assignment" && (
           <Card className="p-8 text-center">
-            <h2 className="text-lg text-zinc-300/75 mb-2">
-              Your Secret Word
-            </h2>
-
+            <h2 className="text-lg text-zinc-300/75 mb-2">Your Secret Word</h2>
             <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] text-center">
               {word}
             </h1>
-
             <div className="text-center mt-4">
               <div className="text-3xl font-black text-amber-300 drop-shadow-[0_0_18px_rgba(252,211,77,0.3)]">
                 {countdown}s
@@ -254,20 +279,17 @@ function Game() {
           </Card>
         )}
 
-        {/* 💡 HINT COLLECTION PHASE */}
+        {/* 💡 HINT COLLECTION */}
         {phase === "hint_collection" && (
           <Card className="p-8">
-            <h2 className="text-lg font-semibold mb-3">
-              Give a Hint 💡
-            </h2>
-
+            <h2 className="text-lg font-semibold mb-3">Give a Hint 💡</h2>
             <p className="text-sm text-zinc-400 mb-3">
               Say something related to your word (don't expose it!)
             </p>
 
             {isSpectator ? (
               <p className="text-center text-amber-300">
-                Spectators cannot submit hints in later rounds.
+                Spectators cannot submit hints.
               </p>
             ) : !submittedHint ? (
               <>
@@ -275,20 +297,21 @@ function Game() {
                   type="text"
                   value={hint}
                   onChange={(e) => setHint(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && hint.trim()) {
+                      socket.emit("submit_hint", { roomId, hint: hint.trim() });
+                      setSubmittedHint(true);
+                    }
+                  }}
                   placeholder="Enter your hint..."
                   className="mb-3 w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 p-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25"
                   maxLength={100}
+                  autoFocus
                 />
-
                 <Button
                   onClick={() => {
                     if (!hint.trim()) return;
-
-                    socket.emit("submit_hint", {
-                      roomId,
-                      hint: hint.trim(),
-                    });
-
+                    socket.emit("submit_hint", { roomId, hint: hint.trim() });
                     setSubmittedHint(true);
                   }}
                   className="w-full"
@@ -305,61 +328,23 @@ function Game() {
           </Card>
         )}
 
-        {/* 🗳️ VOTING + HINT DISPLAY PHASE */}
-        {phase === "never" && (
-          <Card className="p-8">
-            <h2 className="text-lg font-semibold mb-3">
-              All Hints & Vote 🗳️
-            </h2>
-
-            <p className="text-sm text-zinc-400 mb-4">
-              Read everyone's hints carefully...
-            </p>
-
-            <div className="space-y-3">
-              {Object.entries(hints).map(([playerId, playerHint]) => {
-                const player = room.players[playerId];
-                return (
-                  <div key={playerId} className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))] p-4 shadow-[0_0_35px_rgba(34,211,238,0.06)]">
-                    <div className="font-semibold text-cyan-300">
-                      {player?.name || "Unknown"}:
-                    </div>
-                    <div className="text-zinc-300 mt-1">
-                      "{playerHint}"
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <p className="text-center text-sm text-zinc-500 mt-4">
-              Voting starts soon...
-            </p>
-          </Card>
-        )}
-
-        {/* �🗳️ VOTING PHASE */}
+        {/* 🗳️ VOTING */}
         {phase === "voting" && (
           <Card className="p-8">
-            <h2 className="text-lg font-semibold mb-3">
-              All Hints & Vote 🗳️
-            </h2>
-
+            <h2 className="text-lg font-semibold mb-3">All Hints & Vote 🗳️</h2>
             <p className="text-sm text-zinc-400 mb-4">
               Read everyone's hints and vote for the traitor.
             </p>
 
             <div className="space-y-3 mb-4">
-              {Object.entries(hints).map(([playerId, playerHint]) => {
-                const player = room.players[playerId];
+              {Object.entries(hints).map(([pid, playerHint]) => {
+                const player = room.players[pid];
                 return (
-                  <div key={playerId} className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))] p-4 shadow-[0_0_35px_rgba(34,211,238,0.06)]">
+                  <div key={pid} className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))] p-4 shadow-[0_0_35px_rgba(34,211,238,0.06)]">
                     <div className="font-semibold text-cyan-300">
                       {player?.name || "Unknown"}:
                     </div>
-                    <div className="text-zinc-300 mt-1">
-                      "{playerHint}"
-                    </div>
+                    <div className="text-zinc-300 mt-1">"{playerHint}"</div>
                   </div>
                 );
               })}
@@ -367,47 +352,36 @@ function Game() {
 
             {isSpectator ? (
               <p className="text-center text-amber-300">
-                Spectators cannot vote and can only watch this round.
+                Spectators cannot vote.
               </p>
             ) : !hasVoted ? (
               <>
                 <div className="mb-3 mt-6 border-t border-white/8 pt-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-200/75">
-                    Vote
-                  </div>
-                  <p className="mt-2 text-sm text-zinc-400">
-                    Choose the player you think is the traitor.
-                  </p>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-200/75">Vote</div>
+                  <p className="mt-2 text-sm text-zinc-400">Choose the player you think is the traitor.</p>
                 </div>
-
                 <div className="space-y-2">
                   {activePlayers
-                    .filter((player) => player.id !== playerId)
-                    .map((player) => (
+                    .filter((p) => p.id !== playerId)
+                    .map((p) => (
                       <div
-                        key={player.id}
-                        onClick={() => setSelectedPlayer(player.id)}
+                        key={p.id}
+                        onClick={() => setSelectedPlayer(p.id)}
                         className={`flex justify-between rounded-2xl border p-4 cursor-pointer transition ${
-                          selectedPlayer === player.id
+                          selectedPlayer === p.id
                             ? "border-rose-300/40 bg-rose-400/14 shadow-[0_0_40px_rgba(251,113,133,0.18)]"
                             : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
                         }`}
                       >
-                        {player.name}
+                        {p.name}
                       </div>
                     ))}
                 </div>
-
                 <Button
                   className="mt-4 w-full"
                   onClick={() => {
                     if (!selectedPlayer) return;
-
-                    socket.emit("vote_player", {
-                      roomId,
-                      targetId: selectedPlayer,
-                    });
-
+                    socket.emit("vote_player", { roomId, targetId: selectedPlayer });
                     setHasVoted(true);
                     setSelectedPlayer(null);
                   }}
@@ -424,17 +398,13 @@ function Game() {
           </Card>
         )}
 
-        {/* 🧾 ROUND RESULT PHASE */}
+        {/* 🧾 ROUND RESULT */}
         {phase === "round_result" && eliminatedInfo && (
           <Card className="p-8">
-            <h2 className="text-lg font-semibold mb-3">
-              Voting Result
-            </h2>
-
+            <h2 className="text-lg font-semibold mb-3">Voting Result</h2>
             <p className="text-sm text-zinc-400 mb-4">
               {room.players[eliminatedInfo.playerId]?.name || "A player"} was voted out.
             </p>
-
             <div className="rounded-2xl border border-white/10 bg-slate-950/82 p-4 shadow-[0_0_35px_rgba(34,211,238,0.08)]">
               <p className="text-white font-semibold">
                 {eliminatedInfo.wasTraitor
@@ -450,15 +420,17 @@ function Game() {
                     ? "Active players will continue to the next round while you spectate."
                     : "The game will continue once a player advances the round."}
                 </p>
-
                 {!isSpectator && (
                   <Button
                     className="mt-4 w-full"
+                    disabled={continueClicked}
                     onClick={() => {
+                      if (continueClicked) return;
+                      setContinueClicked(true);
                       socket.emit("continue_round", { roomId });
                     }}
                   >
-                    Continue to Next Round
+                    {continueClicked ? "Starting next round..." : "Continue to Next Round"}
                   </Button>
                 )}
               </>
