@@ -411,9 +411,17 @@ module.exports = (io, socket) => {
     startGame(roomId);
   });
 
+  // Only active (non-eliminated) players may confirm they have seen their word.
+  // Spectators are still subscribed to all broadcasts so they receive
+  // phase_changed{word_assignment} and their local countdown fires — but
+  // without this guard their socket.emit("word_reveal_done") would have
+  // triggered the server transition to hint_collection, skipping the full
+  // word-reveal window for the remaining active players.
   socket.on("word_reveal_done", ({ roomId }) => {
     const room = getRoom(roomId);
     if (!room || room.currentPhase !== "word_assignment") return;
+    const player = room.players[currentPlayerId];
+    if (!player || player.isEliminated) return;   // ← spectator guard
     room.currentPhase = "hint_collection";
     io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
     emitRoomUpdate(roomId, room);
