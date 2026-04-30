@@ -103,9 +103,13 @@ module.exports = (io, socket) => {
   ];
 
   // ─── PICK & ASSIGN WORDS ─────────────────────────────────────────────────────
+  //
+  // Uses room.usedPairIndexes (a Set) to avoid repeating any word pair within
+  // the same game session. When the entire pool has been used up it resets
+  // automatically so the game can keep going.
+  //
   // Exclusive pools: 18+ ON → only adultWordPairs; OFF → only standardWordPairs.
-  // Called at the start of every round (including round 1) so the 18+ flag
-  // is honoured on every word assignment, not just the first.
+  //
   const pickAndAssignWords = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -113,7 +117,25 @@ module.exports = (io, socket) => {
 
     const use18Plus = room.config.use18Plus === true;
     const pool = use18Plus ? adultWordPairs : standardWordPairs;
-    const [wordA, wordB] = pool[Math.floor(Math.random() * pool.length)];
+
+    // Initialise tracker if missing (safety net)
+    if (!room.usedPairIndexes) room.usedPairIndexes = new Set();
+
+    // If every pair in the current pool has been seen, reset so the game
+    // can continue — but it will still never repeat until forced.
+    if (room.usedPairIndexes.size >= pool.length) {
+      room.usedPairIndexes.clear();
+      console.log(`[words] roomId=${roomId} — pool exhausted, resetting used-pair tracker`);
+    }
+
+    // Pick a random index that hasn't been used yet this game
+    let idx;
+    do {
+      idx = Math.floor(Math.random() * pool.length);
+    } while (room.usedPairIndexes.has(idx));
+
+    room.usedPairIndexes.add(idx);
+    const [wordA, wordB] = pool[idx];
 
     players.forEach((player) => {
       const isTraitor = room.traitorIds.includes(player.id);
@@ -124,9 +146,10 @@ module.exports = (io, socket) => {
     });
 
     console.log(
-      `[words] roomId=${roomId} use18Plus=${use18Plus} pool=` +
-        (use18Plus ? "adult" : "standard") +
-        ` wordA="${wordA}" wordB="${wordB}"`
+      `[words] roomId=${roomId} use18Plus=${use18Plus} idx=${idx} ` +
+        `pool=${use18Plus ? "adult" : "standard"} ` +
+        `used=${room.usedPairIndexes.size}/${pool.length} ` +
+        `wordA="${wordA}" wordB="${wordB}"`
     );
   };
 
@@ -215,6 +238,9 @@ module.exports = (io, socket) => {
     }
     room.traitorId = room.traitorIds[0];
 
+    // Fresh used-pair tracker for this game session
+    room.usedPairIndexes = new Set();
+
     // Pick & broadcast words (pool determined by 18+ flag)
     pickAndAssignWords(roomId);
 
@@ -271,8 +297,8 @@ module.exports = (io, socket) => {
   };
 
   // ─── START NEXT ROUND ─────────────────────────────────────────────────────────
-  // Goes back to word_assignment so players see a fresh word reveal countdown
-  // and the correct pool (standard or adult) is used every round.
+  // Goes back to word_assignment so players see a fresh word reveal countdown.
+  // pickAndAssignWords picks a pair not yet seen this game session.
   const startNextRound = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -281,7 +307,7 @@ module.exports = (io, socket) => {
     room.status = "playing";
     room.hintTimerEndsAt = null;
 
-    // Pick fresh words for all still-active players using the current 18+ setting
+    // Pick fresh, non-repeated words for all still-active players
     pickAndAssignWords(roomId);
 
     room.currentPhase = "word_assignment";
