@@ -14,7 +14,7 @@ import {
 
 const WORD_ASSIGNMENT_SECONDS = 10;
 
-// ── Circular countdown ring (reused for both word-assignment and hint phase)
+// ── Circular countdown ring (reused for word-assignment phase)
 function CountdownRing({ seconds, total, label, sublabel }) {
   const r = 28;
   const circ = 2 * Math.PI * r;
@@ -46,6 +46,112 @@ function CountdownRing({ seconds, total, label, sublabel }) {
       <div className="text-left">
         <p className="text-sm font-semibold text-zinc-200">{label}</p>
         <p className="text-xs text-zinc-500">{sublabel}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Sticky hint-phase timer bar ─────────────────────────────────────────────
+// Always visible to every player (submitted / not-submitted / spectator) while
+// the hint_collection phase is active, regardless of scroll position.
+function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
+  if (total <= 0) return null;
+
+  const frac = Math.max(0, Math.min(1, seconds / total));
+  const pct = frac * 100;
+  const isLow = seconds <= 5;
+  const isMid = !isLow && seconds <= Math.ceil(total * 0.35);
+
+  const barColor = isLow
+    ? "linear-gradient(90deg,#f87171,#ef4444)"
+    : isMid
+    ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
+    : "linear-gradient(90deg,#22d3ee,#a855f7)";
+
+  const ringColor = isLow ? "#f87171" : isMid ? "#fbbf24" : "#22d3ee";
+  const borderColor = isLow
+    ? "rgba(248,113,113,0.25)"
+    : isMid
+    ? "rgba(251,191,36,0.22)"
+    : "rgba(34,211,238,0.18)";
+  const bgGlow = isLow
+    ? "rgba(239,68,68,0.08)"
+    : isMid
+    ? "rgba(245,158,11,0.07)"
+    : "rgba(34,211,238,0.06)";
+
+  const r = 20;
+  const circ = 2 * Math.PI * r;
+
+  return (
+    <div
+      className="sticky top-0 z-50 mb-4"
+      style={{
+        background: `linear-gradient(135deg,rgba(8,18,38,0.97),rgba(21,11,40,0.95))`,
+        borderBottom: `1px solid ${borderColor}`,
+        boxShadow: `0 4px 32px ${bgGlow}, 0 1px 0 rgba(255,255,255,0.03)`,
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      }}
+    >
+      <div className="flex items-center gap-3 px-4 py-2">
+
+        {/* Arc ring */}
+        <div className="relative shrink-0" style={{ width: 48, height: 48 }}>
+          <svg className="-rotate-90" width="48" height="48" viewBox="0 0 48 48">
+            <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
+            <circle
+              cx="24" cy="24" r={r}
+              fill="none"
+              stroke={ringColor}
+              strokeWidth="4"
+              strokeDasharray={circ}
+              strokeDashoffset={circ * (1 - frac)}
+              strokeLinecap="round"
+              style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
+            />
+          </svg>
+          <span
+            className="absolute inset-0 flex items-center justify-center text-sm font-black tabular-nums"
+            style={{ color: ringColor, transition: "color 0.3s" }}
+          >
+            {seconds}
+          </span>
+        </div>
+
+        {/* Label + progress bar */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline justify-between mb-1">
+            <span
+              className="text-xs font-bold uppercase tracking-widest"
+              style={{ color: ringColor, transition: "color 0.3s" }}
+            >
+              {seconds > 0 ? "Hint Phase" : "Time's Up!"}
+            </span>
+            <span className="text-xs text-zinc-500 tabular-nums">
+              {submittedCount} / {totalActive} submitted
+            </span>
+          </div>
+          <div className="w-full rounded-full bg-white/6 h-1.5 overflow-hidden">
+            <div
+              className="h-1.5 rounded-full"
+              style={{
+                width: `${pct}%`,
+                background: barColor,
+                transition: "width 1s linear, background 0.3s",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Seconds badge */}
+        <div
+          className="shrink-0 text-right"
+          style={{ color: ringColor, transition: "color 0.3s" }}
+        >
+          <span className="text-lg font-black tabular-nums">{seconds}</span>
+          <span className="text-xs text-zinc-500 ml-0.5">s</span>
+        </div>
       </div>
     </div>
   );
@@ -302,6 +408,16 @@ function Game() {
       `}</style>
 
       <Layout>
+        {/* ⏱ Sticky timer bar — visible to ALL players during hint phase */}
+        {phase === "hint_collection" && (
+          <HintTimerBar
+            seconds={hintCountdown}
+            total={hintTimeDuration}
+            submittedCount={submittedCount}
+            totalActive={totalActive}
+          />
+        )}
+
         <div className="space-y-6">
 
           {/* Header */}
@@ -404,32 +520,13 @@ function Game() {
           {/* 💡 HINT COLLECTION */}
           {phase === "hint_collection" && (
             <div className="space-y-4">
-              {/* Input card */}
+              {/* Input card — no duplicate ring here, timer bar is always visible above */}
               <Card className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-white">Give a Hint 💡</h2>
                   <span className="text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
                     {submittedCount} / {totalActive} submitted
                   </span>
-                </div>
-
-                {/* ⏱ Hint countdown ring */}
-                <div className="flex items-center justify-between mb-5 rounded-2xl border border-white/8 bg-slate-950/60 px-4 py-3">
-                  <CountdownRing
-                    seconds={hintCountdown}
-                    total={hintTimeDuration}
-                    label={hintCountdown > 0 ? "Time to drop your hint" : "Time's up!"}
-                    sublabel={
-                      hintCountdown > 0
-                        ? `${hintCountdown}s remaining — voting starts automatically`
-                        : "Proceeding to voting..."
-                    }
-                  />
-                  {hintTimedOut && (
-                    <span className="text-xs font-bold uppercase tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full">
-                      Locked
-                    </span>
-                  )}
                 </div>
 
                 <p className="text-sm text-zinc-400 mb-4">Say something related to your word. Don&apos;t give it away!</p>
@@ -471,7 +568,7 @@ function Game() {
                 ) : (
                   <div className="flex items-center gap-2 justify-center rounded-2xl border border-amber-400/20 bg-amber-400/8 p-4">
                     <span className="text-amber-400 text-lg">⏰</span>
-                    <p className="text-amber-400 font-semibold text-sm">Time's up! You didn't submit a hint this round.</p>
+                    <p className="text-amber-400 font-semibold text-sm">Time&apos;s up! You didn&apos;t submit a hint this round.</p>
                   </div>
                 )}
               </Card>
