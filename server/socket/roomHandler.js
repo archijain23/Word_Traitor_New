@@ -12,6 +12,16 @@ const {
   resetGame,
 } = require("../store/roomStore");
 
+// Per-room hint timers — keyed by roomId
+const hintTimers = {};
+
+function clearHintTimer(roomId) {
+  if (hintTimers[roomId]) {
+    clearTimeout(hintTimers[roomId]);
+    delete hintTimers[roomId];
+  }
+}
+
 module.exports = (io, socket) => {
   let currentRoom = null;
   let currentPlayerId = null;
@@ -40,17 +50,13 @@ module.exports = (io, socket) => {
     currentPhase: room.currentPhase,
     winner: room.winner || null,
     players: buildPublicPlayers(room),
-    hints:
-      room.currentPhase === "voting" ||
-      room.currentPhase === "round_result" ||
-      room.currentPhase === "game_over"
-        ? room.hints
-        : room.hints, // always send hints so live feed works during hint_collection
+    hints: room.hints,
     hintCount: Object.keys(room.hints || {}).length,
     hasVoted: room.hasVoted || {},
     lastEliminated: room.lastEliminated,
     config: room.config,
     revealedRoles: room.revealedRoles || null,
+    hintTimerEndsAt: room.hintTimerEndsAt || null,
   });
 
   const emitRoomUpdate = (roomId, room) => {
@@ -63,101 +69,37 @@ module.exports = (io, socket) => {
     return Boolean(p && p.authToken === authToken);
   };
 
-  // ─── WORD PAIRS ──────────────────────────────────────────────────────────────
+  // ─── WORD PAIRS ───────────────────────────────────────────────────────────────
   const standardWordPairs = [
-    ["Apple", "Orange"],
-    ["Dog", "Wolf"],
-    ["Car", "Bike"],
-    ["Ocean", "River"],
-    ["Doctor", "Nurse"],
-    ["Sword", "Knife"],
-    ["Castle", "Fort"],
-    ["Vampire", "Zombie"],
-    ["Piano", "Guitar"],
-    ["Football", "Rugby"],
-    ["Astronaut", "Pilot"],
-    ["Lion", "Tiger"],
-    ["Diamond", "Ruby"],
-    ["Volcano", "Earthquake"],
-    ["Pirate", "Ninja"],
-    ["Coffee", "Tea"],
-    ["Laptop", "Tablet"],
-    ["Subway", "Bus"],
-    ["Chef", "Baker"],
-    ["Museum", "Library"],
-    ["Basketball", "Volleyball"],
-    ["Winter", "Autumn"],
-    ["Shark", "Whale"],
-    ["Crown", "Tiara"],
-    ["Rocket", "Missile"],
-    ["Elephant", "Rhino"],
-    ["Architect", "Engineer"],
-    ["Poem", "Novel"],
-    ["Pizza", "Burger"],
-    ["Headphones", "Speakers"],
-    ["Lake", "Pond"],
-    ["Witch", "Wizard"],
-    ["Painting", "Drawing"],
-    ["Treadmill", "Bicycle"],
-    ["Compass", "Map"],
-    ["Ballet", "Hip Hop"],
-    ["Sunglasses", "Goggles"],
-    ["Owl", "Hawk"],
-    ["Thunder", "Lightning"],
-    ["Candy", "Chocolate"],
-    ["Prison", "Jail"],
-    ["Trumpet", "Saxophone"],
-    ["Skiing", "Snowboarding"],
-    ["Crocodile", "Alligator"],
-    ["Superhero", "Villain"],
-    ["Sofa", "Chair"],
-    ["Microwave", "Oven"],
-    ["Whale", "Dolphin"],
-    ["Passport", "Visa"],
-    ["Telescope", "Microscope"],
+    ["Apple", "Orange"], ["Dog", "Wolf"], ["Car", "Bike"], ["Ocean", "River"],
+    ["Doctor", "Nurse"], ["Sword", "Knife"], ["Castle", "Fort"], ["Vampire", "Zombie"],
+    ["Piano", "Guitar"], ["Football", "Rugby"], ["Astronaut", "Pilot"], ["Lion", "Tiger"],
+    ["Diamond", "Ruby"], ["Volcano", "Earthquake"], ["Pirate", "Ninja"], ["Coffee", "Tea"],
+    ["Laptop", "Tablet"], ["Subway", "Bus"], ["Chef", "Baker"], ["Museum", "Library"],
+    ["Basketball", "Volleyball"], ["Winter", "Autumn"], ["Shark", "Whale"], ["Crown", "Tiara"],
+    ["Rocket", "Missile"], ["Elephant", "Rhino"], ["Architect", "Engineer"], ["Poem", "Novel"],
+    ["Pizza", "Burger"], ["Headphones", "Speakers"], ["Lake", "Pond"], ["Witch", "Wizard"],
+    ["Painting", "Drawing"], ["Treadmill", "Bicycle"], ["Compass", "Map"], ["Ballet", "Hip Hop"],
+    ["Sunglasses", "Goggles"], ["Owl", "Hawk"], ["Thunder", "Lightning"], ["Candy", "Chocolate"],
+    ["Prison", "Jail"], ["Trumpet", "Saxophone"], ["Skiing", "Snowboarding"], ["Crocodile", "Alligator"],
+    ["Superhero", "Villain"], ["Sofa", "Chair"], ["Microwave", "Oven"], ["Whale", "Dolphin"],
+    ["Passport", "Visa"], ["Telescope", "Microscope"],
   ];
 
   const adultWordPairs = [
-    ["Lingerie", "Bikini"],
-    ["Hookup", "Date"],
-    ["Condom", "Birth Control"],
-    ["Champagne", "Tequila"],
-    ["Strip Club", "Nightclub"],
-    ["Affair", "Crush"],
-    ["Hangover", "Headache"],
-    ["Seduction", "Flirting"],
-    ["One Night Stand", "Blind Date"],
-    ["Whiskey", "Beer"],
-    ["Casino", "Arcade"],
-    ["Divorce", "Breakup"],
-    ["Threesome", "Couple"],
-    ["Dominatrix", "Boss"],
-    ["Sex Tape", "Home Video"],
-    ["Brothel", "Hotel"],
-    ["Vodka", "Gin"],
-    ["Stripper", "Dancer"],
-    ["BDSM", "Roleplay"],
-    ["Pornstar", "Actor"],
-    ["Orgasm", "Climax"],
-    ["Vibrator", "Massager"],
-    ["Escort", "Tour Guide"],
-    ["Fetish", "Hobby"],
-    ["Lap Dance", "Salsa Dance"],
-    ["Marijuana", "Tobacco"],
-    ["Cocaine", "Powder"],
-    ["Orgy", "Party"],
-    ["Nude Beach", "Water Park"],
-    ["Safeword", "Password"],
-    ["Swingers", "Dance Partners"],
-    ["Kink", "Quirk"],
-    ["Bondage", "Yoga Strap"],
-    ["Sugar Daddy", "Sponsor"],
-    ["Weed", "Herb"],
-    ["Booty Call", "Late Night Call"],
-    ["Erotic", "Romantic"],
-    ["Sexting", "Texting"],
-    ["Playboy", "Magazine"],
-    ["Cheating", "Lying"],
+    ["Lingerie", "Bikini"], ["Hookup", "Date"], ["Condom", "Birth Control"],
+    ["Champagne", "Tequila"], ["Strip Club", "Nightclub"], ["Affair", "Crush"],
+    ["Hangover", "Headache"], ["Seduction", "Flirting"], ["One Night Stand", "Blind Date"],
+    ["Whiskey", "Beer"], ["Casino", "Arcade"], ["Divorce", "Breakup"],
+    ["Threesome", "Couple"], ["Dominatrix", "Boss"], ["Sex Tape", "Home Video"],
+    ["Brothel", "Hotel"], ["Vodka", "Gin"], ["Stripper", "Dancer"],
+    ["BDSM", "Roleplay"], ["Pornstar", "Actor"], ["Orgasm", "Climax"],
+    ["Vibrator", "Massager"], ["Escort", "Tour Guide"], ["Fetish", "Hobby"],
+    ["Lap Dance", "Salsa Dance"], ["Marijuana", "Tobacco"], ["Cocaine", "Powder"],
+    ["Orgy", "Party"], ["Nude Beach", "Water Park"], ["Safeword", "Password"],
+    ["Swingers", "Dance Partners"], ["Kink", "Quirk"], ["Bondage", "Yoga Strap"],
+    ["Sugar Daddy", "Sponsor"], ["Weed", "Herb"], ["Booty Call", "Late Night Call"],
+    ["Erotic", "Romantic"], ["Sexting", "Texting"], ["Playboy", "Magazine"], ["Cheating", "Lying"],
   ];
 
   const buildStateSync = (room, playerId) => ({
@@ -180,9 +122,7 @@ module.exports = (io, socket) => {
       word: room.players[playerId]?.word || null,
       role:
         room.currentPhase === "game_over"
-          ? room.traitorIds.includes(playerId)
-            ? "traitor"
-            : "citizen"
+          ? room.traitorIds.includes(playerId) ? "traitor" : "citizen"
           : null,
     },
   });
@@ -202,18 +142,42 @@ module.exports = (io, socket) => {
     return { room, reconnected };
   };
 
-  // ─── START GAME ──────────────────────────────────────────────────────────────
+  // ─── FORCE VOTING (called when hint timer expires) ───────────────────────────
+  const forceVotingPhase = (roomId) => {
+    const room = getRoom(roomId);
+    if (!room || room.currentPhase !== "hint_collection") return;
+    clearHintTimer(roomId);
+    room.hintTimerEndsAt = null;
+    room.currentPhase = "voting";
+    io.to(roomId).emit("phase_changed", { phase: "voting", hints: room.hints });
+    emitRoomUpdate(roomId, room);
+    console.log(`[hintTimer] roomId=${roomId} — time up, forced voting`);
+  };
+
+  // ─── START HINT TIMER ────────────────────────────────────────────────────────
+  const startHintTimer = (roomId) => {
+    clearHintTimer(roomId);
+    const room = getRoom(roomId);
+    if (!room) return;
+    const seconds = room.config?.hintTime ?? 30;
+    const endsAt = Date.now() + seconds * 1000;
+    room.hintTimerEndsAt = endsAt;
+    // Broadcast so all clients can sync their local countdown
+    io.to(roomId).emit("hint_timer_start", { endsAt, durationSeconds: seconds });
+    hintTimers[roomId] = setTimeout(() => forceVotingPhase(roomId), seconds * 1000);
+    console.log(`[hintTimer] roomId=${roomId} — started ${seconds}s timer, endsAt=${endsAt}`);
+  };
+
+  // ─── START GAME ───────────────────────────────────────────────────────────────
   const startGame = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
-
     const players = getActivePlayers(room);
-    const numTraitors = room.config?.numTraitors ?? 1;
     if (players.length < 2) return;
 
-    // Assign traitors
     room.traitorIds = [];
     const selectedIndexes = new Set();
+    const numTraitors = room.config?.numTraitors ?? 1;
     while (room.traitorIds.length < Math.min(numTraitors, players.length - 1)) {
       const idx = Math.floor(Math.random() * players.length);
       if (!selectedIndexes.has(idx)) {
@@ -223,33 +187,26 @@ module.exports = (io, socket) => {
     }
     room.traitorId = room.traitorIds[0];
 
-    // ✅ Read use18Plus as strict boolean — set correctly by start_game handler below
     const use18Plus = room.config.use18Plus === true;
-    console.log(`[startGame] roomId=${roomId} use18Plus=${use18Plus} config=`, room.config);
-
-    const pool = use18Plus
-      ? [...standardWordPairs, ...adultWordPairs]
-      : standardWordPairs;
-
+    const pool = use18Plus ? [...standardWordPairs, ...adultWordPairs] : standardWordPairs;
     const [wordA, wordB] = pool[Math.floor(Math.random() * pool.length)];
 
     players.forEach((player) => {
       const isTraitor = room.traitorIds.includes(player.id);
       room.players[player.id].word = isTraitor ? wordB : wordA;
       if (player.socketId) {
-        io.to(player.socketId).emit("game_started", {
-          word: room.players[player.id].word,
-        });
+        io.to(player.socketId).emit("game_started", { word: room.players[player.id].word });
       }
     });
 
     resetRound(roomId);
     room.status = "playing";
     room.currentPhase = "word_assignment";
+    room.hintTimerEndsAt = null;
     emitRoomUpdate(roomId, room);
   };
 
-  // ─── END VOTING ──────────────────────────────────────────────────────────────
+  // ─── END VOTING ───────────────────────────────────────────────────────────────
   const endVoting = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -257,28 +214,17 @@ module.exports = (io, socket) => {
     let maxVotes = -1;
     let candidates = [];
     for (const pid in room.votes) {
-      if (room.votes[pid] > maxVotes) {
-        maxVotes = room.votes[pid];
-        candidates = [pid];
-      } else if (room.votes[pid] === maxVotes) {
-        candidates.push(pid);
-      }
+      if (room.votes[pid] > maxVotes) { maxVotes = room.votes[pid]; candidates = [pid]; }
+      else if (room.votes[pid] === maxVotes) candidates.push(pid);
     }
 
     const eliminated = candidates[Math.floor(Math.random() * candidates.length)];
     const wasTraitor = room.traitorIds.includes(eliminated);
-
     markPlayerEliminated(roomId, eliminated);
     room.lastEliminated = { playerId: eliminated, wasTraitor };
-
     io.to(roomId).emit("player_eliminated", { playerId: eliminated, wasTraitor });
-
     room.currentPhase = "round_result";
-    io.to(roomId).emit("phase_changed", {
-      phase: "round_result",
-      eliminatedPlayer: eliminated,
-      wasTraitor,
-    });
+    io.to(roomId).emit("phase_changed", { phase: "round_result", eliminatedPlayer: eliminated, wasTraitor });
     emitRoomUpdate(roomId, room);
 
     if (wasTraitor) {
@@ -286,10 +232,7 @@ module.exports = (io, socket) => {
       room.currentPhase = "game_over";
       room.winner = "civilians";
       room.revealedRoles = Object.fromEntries(
-        Object.keys(room.players).map((pid) => [
-          pid,
-          room.traitorIds.includes(pid) ? "traitor" : "citizen",
-        ])
+        Object.keys(room.players).map((pid) => [pid, room.traitorIds.includes(pid) ? "traitor" : "citizen"])
       );
       emitRoomUpdate(roomId, room);
       io.to(roomId).emit("game_over", { winner: "civilians" });
@@ -301,17 +244,14 @@ module.exports = (io, socket) => {
       room.currentPhase = "game_over";
       room.winner = "traitor";
       room.revealedRoles = Object.fromEntries(
-        Object.keys(room.players).map((pid) => [
-          pid,
-          room.traitorIds.includes(pid) ? "traitor" : "citizen",
-        ])
+        Object.keys(room.players).map((pid) => [pid, room.traitorIds.includes(pid) ? "traitor" : "citizen"])
       );
       emitRoomUpdate(roomId, room);
       io.to(roomId).emit("game_over", { winner: "traitor" });
     }
   };
 
-  // ─── START NEXT ROUND ────────────────────────────────────────────────────────
+  // ─── START NEXT ROUND ─────────────────────────────────────────────────────────
   const startNextRound = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
@@ -321,28 +261,29 @@ module.exports = (io, socket) => {
     room.currentPhase = "hint_collection";
     io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
     emitRoomUpdate(roomId, room);
+    startHintTimer(roomId);
   };
 
-  // ─── END HINT COLLECTION ─────────────────────────────────────────────────────
+  // ─── END HINT COLLECTION (all submitted early) ───────────────────────────────
   const endHintCollection = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
     const total = getActivePlayers(room).length;
     const submitted = Object.keys(room.hints).length;
     if (submitted >= total) {
+      clearHintTimer(roomId);
+      room.hintTimerEndsAt = null;
       room.currentPhase = "voting";
       io.to(roomId).emit("phase_changed", { phase: "voting", hints: room.hints });
       emitRoomUpdate(roomId, room);
     }
   };
 
-  // ─── SOCKET EVENTS ───────────────────────────────────────────────────────────
+  // ─── SOCKET EVENTS ────────────────────────────────────────────────────────────
 
   socket.on("create_room", ({ roomId, name, playerId, authToken }) => {
     const resolvedPlayerId = playerId || socket.id;
-    if (!roomId || !name || !authToken) {
-      socket.emit("error", "Missing room or session details"); return;
-    }
+    if (!roomId || !name || !authToken) { socket.emit("error", "Missing room or session details"); return; }
     if (getRoom(roomId)) { socket.emit("error", "Room already exists"); return; }
     createRoom(roomId, resolvedPlayerId, name, socket.id, { authToken });
     socket.join(roomId);
@@ -355,25 +296,25 @@ module.exports = (io, socket) => {
 
   socket.on("join_room", ({ roomId, name, playerId, authToken }) => {
     const resolvedPlayerId = playerId || socket.id;
-    if (!roomId || !name || !authToken) {
-      socket.emit("error", "Missing room or session details"); return;
-    }
+    if (!roomId || !name || !authToken) { socket.emit("error", "Missing room or session details"); return; }
     const existingRoom = getRoom(roomId);
     if (!existingRoom) { socket.emit("error", "Room not found"); return; }
     const existingPlayer = existingRoom.players[resolvedPlayerId];
-    if (existingPlayer && existingPlayer.authToken !== authToken) {
-      socket.emit("error", "Player session could not be verified"); return;
-    }
+    if (existingPlayer && existingPlayer.authToken !== authToken) { socket.emit("error", "Player session could not be verified"); return; }
     const result = attachToRoom(roomId, resolvedPlayerId, socket.id, name, authToken);
     if (!result) { socket.emit("error", "Room not found"); return; }
     const { room, reconnected } = result;
     emitRoomUpdate(roomId, room);
     syncPlayerState(socket, room, resolvedPlayerId);
     if (reconnected) {
-      io.to(roomId).emit("PLAYER_RECONNECTED", {
-        playerId: resolvedPlayerId,
-        room: buildPublicRoom(room),
-      });
+      io.to(roomId).emit("PLAYER_RECONNECTED", { playerId: resolvedPlayerId, room: buildPublicRoom(room) });
+      // Re-send hint timer to the reconnecting player if it's still running
+      if (room.currentPhase === "hint_collection" && room.hintTimerEndsAt) {
+        socket.emit("hint_timer_start", {
+          endsAt: room.hintTimerEndsAt,
+          durationSeconds: room.config?.hintTime ?? 30,
+        });
+      }
     }
   });
 
@@ -381,17 +322,18 @@ module.exports = (io, socket) => {
     if (!roomId || !playerId || !authToken) return;
     const room = getRoom(roomId);
     if (!room) { socket.emit("error", "Room not found"); return; }
-    if (!isAuthorizedPlayer(room, playerId, authToken)) {
-      socket.emit("error", "Player session not found"); return;
-    }
+    if (!isAuthorizedPlayer(room, playerId, authToken)) { socket.emit("error", "Player session not found"); return; }
     const result = attachToRoom(roomId, playerId, socket.id, room.players[playerId].name, authToken);
     if (!result) return;
     emitRoomUpdate(roomId, result.room);
-    io.to(roomId).emit("PLAYER_RECONNECTED", {
-      playerId,
-      room: buildPublicRoom(result.room),
-    });
+    io.to(roomId).emit("PLAYER_RECONNECTED", { playerId, room: buildPublicRoom(result.room) });
     syncPlayerState(socket, result.room, playerId);
+    if (result.room.currentPhase === "hint_collection" && result.room.hintTimerEndsAt) {
+      socket.emit("hint_timer_start", {
+        endsAt: result.room.hintTimerEndsAt,
+        durationSeconds: result.room.config?.hintTime ?? 30,
+      });
+    }
   });
 
   socket.on("leave_room", ({ roomId }) => {
@@ -406,30 +348,26 @@ module.exports = (io, socket) => {
   socket.on("start_game", ({ roomId, config }) => {
     const room = getRoom(roomId);
     if (!room) return;
-    if (currentPlayerId !== room.hostId) {
-      socket.emit("error", "Only the host can start the game"); return;
-    }
+    if (currentPlayerId !== room.hostId) { socket.emit("error", "Only the host can start the game"); return; }
     if (config) {
-      // ✅ Use === true for booleans so false is never discarded by || coercion
       room.config = {
-        numTraitors:      config.numTraitors      ?? room.config.numTraitors      ?? 1,
-        hintTime:         config.hintTime         ?? room.config.hintTime         ?? 30,
-        difficulty:       config.difficulty       ?? room.config.difficulty       ?? "Medium",
-        use18Plus:        config.use18Plus        === true,
-        anonymousVoting:  config.anonymousVoting  === true,
+        numTraitors:     config.numTraitors     ?? room.config.numTraitors     ?? 1,
+        hintTime:        config.hintTime        ?? room.config.hintTime        ?? 30,
+        difficulty:      config.difficulty      ?? room.config.difficulty      ?? "Medium",
+        use18Plus:       config.use18Plus       === true,
+        anonymousVoting: config.anonymousVoting === true,
       };
     }
-    console.log(`[start_game] config received:`, config, `→ stored:`, room.config);
     startGame(roomId);
   });
 
   socket.on("word_reveal_done", ({ roomId }) => {
     const room = getRoom(roomId);
-    if (!room) return;
-    if (room.currentPhase !== "word_assignment") return;
+    if (!room || room.currentPhase !== "word_assignment") return;
     room.currentPhase = "hint_collection";
     io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
     emitRoomUpdate(roomId, room);
+    startHintTimer(roomId);
   });
 
   socket.on("vote_player", ({ roomId, targetId }) => {
@@ -443,9 +381,7 @@ module.exports = (io, socket) => {
     if (room.hasVoted?.[currentPlayerId]) return;
     addVote(roomId, currentPlayerId, targetId);
     emitRoomUpdate(roomId, room);
-    if (Object.keys(room.hasVoted).length >= getActivePlayers(room).length) {
-      endVoting(roomId);
-    }
+    if (Object.keys(room.hasVoted).length >= getActivePlayers(room).length) endVoting(roomId);
   });
 
   socket.on("submit_hint", ({ roomId, hint }) => {
@@ -469,10 +405,9 @@ module.exports = (io, socket) => {
   socket.on("play_again", ({ roomId }) => {
     const room = getRoom(roomId);
     if (!room) return;
-    if (currentPlayerId !== room.hostId) {
-      socket.emit("error", "Only the host can start a new game"); return;
-    }
+    if (currentPlayerId !== room.hostId) { socket.emit("error", "Only the host can start a new game"); return; }
     if (room.status !== "game_over") return;
+    clearHintTimer(roomId);
     resetGame(roomId);
     emitRoomUpdate(roomId, room);
     io.to(roomId).emit("return_to_lobby", { roomId });
@@ -483,10 +418,7 @@ module.exports = (io, socket) => {
     const room = getRoom(currentRoom);
     if (!room) return;
     markPlayerOffline(currentRoom, currentPlayerId);
-    io.to(currentRoom).emit("PLAYER_DISCONNECTED", {
-      playerId: currentPlayerId,
-      room: buildPublicRoom(room),
-    });
+    io.to(currentRoom).emit("PLAYER_DISCONNECTED", { playerId: currentPlayerId, room: buildPublicRoom(room) });
     emitRoomUpdate(currentRoom, room);
   });
 };

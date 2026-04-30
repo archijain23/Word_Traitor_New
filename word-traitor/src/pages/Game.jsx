@@ -14,6 +14,43 @@ import {
 
 const WORD_ASSIGNMENT_SECONDS = 10;
 
+// ── Circular countdown ring (reused for both word-assignment and hint phase)
+function CountdownRing({ seconds, total, label, sublabel }) {
+  const r = 28;
+  const circ = 2 * Math.PI * r;
+  const frac = Math.max(0, Math.min(1, seconds / total));
+  const color = seconds <= 5 ? "#f87171" : seconds <= Math.ceil(total * 0.35) ? "#fbbf24" : "#22d3ee";
+  return (
+    <div className="flex items-center gap-4">
+      <div className="relative w-16 h-16 shrink-0">
+        <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+          <circle
+            cx="32" cy="32" r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth="5"
+            strokeDasharray={circ}
+            strokeDashoffset={circ * (1 - frac)}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
+          />
+        </svg>
+        <span
+          className="absolute inset-0 flex items-center justify-center text-xl font-black"
+          style={{ color }}
+        >
+          {seconds}
+        </span>
+      </div>
+      <div className="text-left">
+        <p className="text-sm font-semibold text-zinc-200">{label}</p>
+        <p className="text-xs text-zinc-500">{sublabel}</p>
+      </div>
+    </div>
+  );
+}
+
 function Game() {
   const { roomId } = useParams();
   const playerId = getStoredPlayerId();
@@ -25,12 +62,17 @@ function Game() {
   const [hint, setHint] = useState("");
   const [hints, setHints] = useState({});
   const [submittedHint, setSubmittedHint] = useState(false);
-  const [countdown, setCountdown] = useState(WORD_ASSIGNMENT_SECONDS);
+  // word-assignment countdown
+  const [wordCountdown, setWordCountdown] = useState(WORD_ASSIGNMENT_SECONDS);
+  // hint-phase countdown
+  const [hintCountdown, setHintCountdown] = useState(0);
+  const hintTimerRef = useRef(null);
   const [eliminatedInfo, setEliminatedInfo] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
-  // track new hint pops for animation
   const [newHintIds, setNewHintIds] = useState(new Set());
   const prevHintsRef = useRef({});
+  // store hintTime config for the ring total
+  const [hintTimeDuration, setHintTimeDuration] = useState(30);
 
   const name = getStoredPlayerName();
   const navigate = useNavigate();
@@ -40,12 +82,44 @@ function Game() {
     ? Object.values(room.players).filter((p) => !p.isEliminated)
     : [];
 
-  // ⏰ COUNTDOWN TIMER
+  // ─── Hint timer helpers ───────────────────────────────────────────────────────
+  const clearHintInterval = () => {
+    if (hintTimerRef.current) {
+      clearInterval(hintTimerRef.current);
+      hintTimerRef.current = null;
+    }
+  };
+
+  const startLocalHintCountdown = (endsAt, durationSeconds) => {
+    clearHintInterval();
+    setHintTimeDuration(durationSeconds);
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      setHintCountdown(remaining);
+      if (remaining <= 0) clearHintInterval();
+    };
+    tick();
+    hintTimerRef.current = setInterval(tick, 500);
+  };
+
+  // ─── Listen for server hint timer ────────────────────────────────────────────
+  useEffect(() => {
+    const handleHintTimer = ({ endsAt, durationSeconds }) => {
+      startLocalHintCountdown(endsAt, durationSeconds);
+    };
+    socket.on("hint_timer_start", handleHintTimer);
+    return () => {
+      socket.off("hint_timer_start", handleHintTimer);
+      clearHintInterval();
+    };
+  }, []);
+
+  // ─── Word-assignment countdown ────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== "word_assignment") return;
-    setCountdown(WORD_ASSIGNMENT_SECONDS);
+    setWordCountdown(WORD_ASSIGNMENT_SECONDS);
     const timer = setInterval(() => {
-      setCountdown((prev) => {
+      setWordCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
           socket.emit("word_reveal_done", { roomId });
@@ -57,30 +131,21 @@ function Game() {
     return () => clearInterval(timer);
   }, [phase, roomId]);
 
-  // 🔌 ROOM UPDATES
+  // ─── Room updates ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const applyRoomState = (roomData) => {
       setRoom(roomData);
       if (roomData.currentPhase) setPhase(roomData.currentPhase);
       if (roomData.lastEliminated) setEliminatedInfo(roomData.lastEliminated);
+      if (roomData.config?.hintTime) setHintTimeDuration(roomData.config.hintTime);
       if (roomData.hints) {
-        // detect newly-arrived hints for pop animation
         const prev = prevHintsRef.current;
         const incoming = roomData.hints;
         const fresh = Object.keys(incoming).filter((k) => !prev[k]);
         if (fresh.length > 0) {
-          setNewHintIds((ids) => {
-            const next = new Set(ids);
-            fresh.forEach((k) => next.add(k));
-            return next;
-          });
-          // remove pop class after 600ms
+          setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((k) => n.add(k)); return n; });
           setTimeout(() => {
-            setNewHintIds((ids) => {
-              const next = new Set(ids);
-              fresh.forEach((k) => next.delete(k));
-              return next;
-            });
+            setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((k) => n.delete(k)); return n; });
           }, 600);
         }
         prevHintsRef.current = incoming;
@@ -90,6 +155,10 @@ function Game() {
       if (roomData.hasVoted) setHasVoted(Boolean(playerId && roomData.hasVoted[playerId]));
       const me = playerId ? roomData.players[playerId] : null;
       if (me?.word) setWord(me.word);
+      // Sync hint countdown from server timestamp if mid-phase
+      if (roomData.hintTimerEndsAt && roomData.currentPhase === "hint_collection") {
+        startLocalHintCountdown(roomData.hintTimerEndsAt, roomData.config?.hintTime ?? 30);
+      }
     };
 
     const handleRoomUpdated = (roomData) => applyRoomState(roomData);
@@ -106,10 +175,7 @@ function Game() {
 
     const handlePhaseChanged = (data) => {
       setPhase(data.phase);
-      if (data.hints) {
-        prevHintsRef.current = data.hints;
-        setHints(data.hints);
-      }
+      if (data.hints) { prevHintsRef.current = data.hints; setHints(data.hints); }
       if (data.phase === "hint_collection") {
         setSubmittedHint(false);
         setHint("");
@@ -119,19 +185,22 @@ function Game() {
       }
       if (data.phase === "round_result") {
         setEliminatedInfo({ playerId: data.eliminatedPlayer, wasTraitor: data.wasTraitor });
+        clearHintInterval();
+        setHintCountdown(0);
       }
-      if (data.phase === "word_assignment") setCountdown(WORD_ASSIGNMENT_SECONDS);
-      if (data.phase === "voting") setHasVoted(false);
+      if (data.phase === "voting") {
+        setHasVoted(false);
+        clearHintInterval();
+        setHintCountdown(0);
+      }
+      if (data.phase === "word_assignment") setWordCountdown(WORD_ASSIGNMENT_SECONDS);
     };
 
     const handleReturnToLobby = ({ roomId: rid }) => {
       navigate(`/lobby/${rid}`, { state: { skipNamePrompt: true } });
     };
 
-    const handleError = () => {
-      clearRememberedRoom(roomId);
-      navigate("/");
-    };
+    const handleError = () => { clearRememberedRoom(roomId); navigate("/"); };
 
     socket.on("room_updated", handleRoomUpdated);
     socket.on("STATE_SYNC", handleStateSync);
@@ -150,17 +219,14 @@ function Game() {
     };
   }, [navigate, playerId, roomId]);
 
-  // 🎯 PRIVATE WORD
+  // ─── Private word ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleGameStarted = (data) => {
-      setWord(data.word);
-      setCountdown(WORD_ASSIGNMENT_SECONDS);
-    };
+    const handleGameStarted = (data) => { setWord(data.word); setWordCountdown(WORD_ASSIGNMENT_SECONDS); };
     socket.on("game_started", handleGameStarted);
     return () => socket.off("game_started", handleGameStarted);
   }, []);
 
-  // 🚀 JOIN ON MOUNT
+  // ─── Join on mount ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!name) return;
     const session = buildPlayerSession(name);
@@ -168,7 +234,7 @@ function Game() {
     socket.emit("join_room", { roomId, name, playerId: session.playerId, authToken: session.authToken });
   }, [roomId, name]);
 
-  // 🔁 RECONNECT
+  // ─── Reconnect ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomId || !playerId) return;
     const handleReconnect = () => emitReconnectPlayer(roomId);
@@ -177,20 +243,17 @@ function Game() {
   }, [roomId, playerId]);
 
   if (!room) {
-    return (
-      <Layout>
-        <p className="text-center text-zinc-400">Loading game...</p>
-      </Layout>
-    );
+    return <Layout><p className="text-center text-zinc-400">Loading game...</p></Layout>;
   }
 
   const isHost = playerId === room.hostId;
-  const wordProgress = ((WORD_ASSIGNMENT_SECONDS - countdown) / WORD_ASSIGNMENT_SECONDS) * 100;
+  const wordProgress = ((WORD_ASSIGNMENT_SECONDS - wordCountdown) / WORD_ASSIGNMENT_SECONDS) * 100;
   const hintEntries = Object.entries(hints);
   const submittedCount = hintEntries.length;
   const totalActive = activePlayers.length;
+  const hintTimedOut = hintCountdown <= 0 && phase === "hint_collection";
 
-  // Reusable live hint feed component (used in both hint_collection & voting)
+  // ─── Live hint feed ───────────────────────────────────────────────────────────
   const HintFeed = ({ showWaiting = true }) => (
     <div className="space-y-2">
       {hintEntries.length === 0 && showWaiting && (
@@ -212,22 +275,15 @@ function Game() {
             }`}
             style={isNew ? { animation: "hintPop 0.35s cubic-bezier(0.34,1.56,0.64,1)" } : {}}
           >
-            {/* Avatar dot */}
-            <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
-              isMe ? "bg-fuchsia-400" : "bg-cyan-400"
-            }`} />
+            <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${isMe ? "bg-fuchsia-400" : "bg-cyan-400"}`} />
             <div className="min-w-0 flex-1">
-              <span className={`text-sm font-semibold ${
-                isMe ? "text-fuchsia-300" : "text-cyan-300"
-              }`}>
+              <span className={`text-sm font-semibold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
                 {player?.name || "Unknown"}{isMe ? " (you)" : ""}
               </span>
               <p className="text-zinc-200 mt-0.5 text-sm break-words">&ldquo;{playerHint}&rdquo;</p>
             </div>
             {isNew && (
-              <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-cyan-300 bg-cyan-400/15 px-2 py-0.5 rounded-full">
-                new
-              </span>
+              <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-cyan-300 bg-cyan-400/15 px-2 py-0.5 rounded-full">new</span>
             )}
           </div>
         );
@@ -237,7 +293,6 @@ function Game() {
 
   return (
     <>
-      {/* keyframe for pop animation — injected once */}
       <style>{`
         @keyframes hintPop {
           0%   { transform: scale(0.88) translateY(6px); opacity: 0; }
@@ -301,22 +356,18 @@ function Game() {
               )}
               <div className="flex flex-col gap-3">
                 {isHost && (
-                  <Button className="w-full py-4 text-base font-black" onClick={() => socket.emit("play_again", { roomId })}>
-                    🔁 Play Again
-                  </Button>
+                  <Button className="w-full py-4 text-base font-black" onClick={() => socket.emit("play_again", { roomId })}>🔁 Play Again</Button>
                 )}
                 {!isHost && <p className="text-sm text-zinc-500">Waiting for the host to start a new game...</p>}
                 <button
                   onClick={() => { socket.emit("leave_room", { roomId }); navigate("/"); }}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm text-zinc-400 transition hover:border-white/20 hover:text-white"
-                >
-                  Leave Room
-                </button>
+                >Leave Room</button>
               </div>
             </Card>
           )}
 
-          {/* 🎯 WORD ASSIGNMENT — 10s */}
+          {/* 🎯 WORD ASSIGNMENT */}
           {phase === "word_assignment" && (
             <Card className="p-8 text-center">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Your Secret Word</p>
@@ -326,39 +377,21 @@ function Game() {
                 </span>
               </div>
               <div className="flex items-center justify-center gap-4 mb-6">
-                <div className="relative w-16 h-16">
-                  <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                    <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
-                    <circle
-                      cx="32" cy="32" r="28"
-                      fill="none"
-                      stroke={countdown <= 3 ? "#f87171" : countdown <= 6 ? "#fbbf24" : "#22d3ee"}
-                      strokeWidth="5"
-                      strokeDasharray={`${2 * Math.PI * 28}`}
-                      strokeDashoffset={`${2 * Math.PI * 28 * (countdown / WORD_ASSIGNMENT_SECONDS)}`}
-                      strokeLinecap="round"
-                      style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
-                    />
-                  </svg>
-                  <span className={`absolute inset-0 flex items-center justify-center text-xl font-black ${
-                    countdown <= 3 ? "text-red-400" : countdown <= 6 ? "text-amber-400" : "text-cyan-300"
-                  }`}>
-                    {countdown}
-                  </span>
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-zinc-200">Memorize your word!</p>
-                  <p className="text-xs text-zinc-500">Hint phase starts in {countdown}s</p>
-                </div>
+                <CountdownRing
+                  seconds={wordCountdown}
+                  total={WORD_ASSIGNMENT_SECONDS}
+                  label="Memorize your word!"
+                  sublabel={`Hint phase starts in ${wordCountdown}s`}
+                />
               </div>
               <div className="w-full rounded-full bg-white/6 h-2 overflow-hidden">
                 <div
                   className="h-2 rounded-full transition-all duration-1000 linear"
                   style={{
                     width: `${wordProgress}%`,
-                    background: countdown <= 3
+                    background: wordCountdown <= 3
                       ? "linear-gradient(90deg,#f87171,#ef4444)"
-                      : countdown <= 6
+                      : wordCountdown <= 6
                       ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
                       : "linear-gradient(90deg,#22d3ee,#a855f7)",
                   }}
@@ -368,22 +401,42 @@ function Game() {
             </Card>
           )}
 
-          {/* 💡 HINT COLLECTION — live feed */}
+          {/* 💡 HINT COLLECTION */}
           {phase === "hint_collection" && (
             <div className="space-y-4">
               {/* Input card */}
               <Card className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-white">Give a Hint 💡</h2>
-                  {/* Progress pill */}
                   <span className="text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
                     {submittedCount} / {totalActive} submitted
                   </span>
                 </div>
+
+                {/* ⏱ Hint countdown ring */}
+                <div className="flex items-center justify-between mb-5 rounded-2xl border border-white/8 bg-slate-950/60 px-4 py-3">
+                  <CountdownRing
+                    seconds={hintCountdown}
+                    total={hintTimeDuration}
+                    label={hintCountdown > 0 ? "Time to drop your hint" : "Time's up!"}
+                    sublabel={
+                      hintCountdown > 0
+                        ? `${hintCountdown}s remaining — voting starts automatically`
+                        : "Proceeding to voting..."
+                    }
+                  />
+                  {hintTimedOut && (
+                    <span className="text-xs font-bold uppercase tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full">
+                      Locked
+                    </span>
+                  )}
+                </div>
+
                 <p className="text-sm text-zinc-400 mb-4">Say something related to your word. Don&apos;t give it away!</p>
+
                 {isSpectator ? (
                   <p className="text-center text-amber-300">Spectators cannot submit hints.</p>
-                ) : !submittedHint ? (
+                ) : !submittedHint && !hintTimedOut ? (
                   <>
                     <input
                       type="text"
@@ -408,14 +461,17 @@ function Game() {
                       }}
                       className="w-full"
                       disabled={!hint.trim()}
-                    >
-                      Submit Hint
-                    </Button>
+                    >Submit Hint</Button>
                   </>
-                ) : (
+                ) : submittedHint ? (
                   <div className="flex items-center gap-2 justify-center rounded-2xl border border-green-400/20 bg-green-400/8 p-4">
                     <span className="text-green-400 text-lg">✅</span>
                     <p className="text-green-400 font-semibold text-sm">Hint submitted! Watching others drop theirs...</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 justify-center rounded-2xl border border-amber-400/20 bg-amber-400/8 p-4">
+                    <span className="text-amber-400 text-lg">⏰</span>
+                    <p className="text-amber-400 font-semibold text-sm">Time's up! You didn't submit a hint this round.</p>
                   </div>
                 )}
               </Card>
@@ -431,13 +487,9 @@ function Game() {
                     Live Hints
                   </h3>
                   <span className="text-xs text-zinc-500">
-                    {totalActive - submittedCount > 0
-                      ? `Waiting for ${totalActive - submittedCount} more...`
-                      : "All hints in!"}
+                    {totalActive - submittedCount > 0 ? `Waiting for ${totalActive - submittedCount} more...` : "All hints in!"}
                   </span>
                 </div>
-
-                {/* Pending player dots */}
                 <div className="flex flex-wrap gap-2 mb-4">
                   {activePlayers.map((p) => {
                     const done = Boolean(hints[p.id]);
@@ -446,20 +498,15 @@ function Game() {
                         key={p.id}
                         title={p.name}
                         className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-300 ${
-                          done
-                            ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300"
-                            : "border-white/10 bg-white/5 text-zinc-500"
+                          done ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-white/10 bg-white/5 text-zinc-500"
                         }`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${
-                          done ? "bg-cyan-400" : "bg-zinc-600"
-                        }`} />
+                        <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-cyan-400" : "bg-zinc-600"}`} />
                         {p.name}{p.id === playerId ? " (you)" : ""}
                       </div>
                     );
                   })}
                 </div>
-
                 <HintFeed showWaiting />
               </Card>
             </div>
@@ -489,9 +536,7 @@ function Game() {
                             ? "border-rose-300/40 bg-rose-400/14"
                             : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
                         }`}
-                      >
-                        {p.name}
-                      </div>
+                      >{p.name}</div>
                     ))}
                   </div>
                   <Button
@@ -503,9 +548,7 @@ function Game() {
                       setSelectedPlayer(null);
                     }}
                     disabled={!selectedPlayer}
-                  >
-                    Submit Vote
-                  </Button>
+                  >Submit Vote</Button>
                 </>
               ) : (
                 <p className="text-center text-green-400 mt-6">✅ Vote submitted! Waiting for others...</p>
@@ -535,10 +578,7 @@ function Game() {
                       : "The game will continue once a player advances the round."}
                   </p>
                   {!isSpectator && (
-                    <Button
-                      className="mt-4 w-full"
-                      onClick={() => socket.emit("continue_round", { roomId })}
-                    >
+                    <Button className="mt-4 w-full" onClick={() => socket.emit("continue_round", { roomId })}>
                       Continue to Next Round
                     </Button>
                   )}
