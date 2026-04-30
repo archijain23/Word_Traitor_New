@@ -102,6 +102,34 @@ module.exports = (io, socket) => {
     ["Erotic", "Romantic"], ["Sexting", "Texting"], ["Playboy", "Magazine"], ["Cheating", "Lying"],
   ];
 
+  // ─── PICK & ASSIGN WORDS ─────────────────────────────────────────────────────
+  // Exclusive pools: 18+ ON → only adultWordPairs; OFF → only standardWordPairs.
+  // Called at the start of every round (including round 1) so the 18+ flag
+  // is honoured on every word assignment, not just the first.
+  const pickAndAssignWords = (roomId) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+    const players = getActivePlayers(room);
+
+    const use18Plus = room.config.use18Plus === true;
+    const pool = use18Plus ? adultWordPairs : standardWordPairs;
+    const [wordA, wordB] = pool[Math.floor(Math.random() * pool.length)];
+
+    players.forEach((player) => {
+      const isTraitor = room.traitorIds.includes(player.id);
+      room.players[player.id].word = isTraitor ? wordB : wordA;
+      if (player.socketId) {
+        io.to(player.socketId).emit("game_started", { word: room.players[player.id].word });
+      }
+    });
+
+    console.log(
+      `[words] roomId=${roomId} use18Plus=${use18Plus} pool=` +
+        (use18Plus ? "adult" : "standard") +
+        ` wordA="${wordA}" wordB="${wordB}"`
+    );
+  };
+
   const buildStateSync = (room, playerId) => ({
     room: buildPublicRoom(room),
     currentGameState: {
@@ -162,7 +190,6 @@ module.exports = (io, socket) => {
     const seconds = room.config?.hintTime ?? 30;
     const endsAt = Date.now() + seconds * 1000;
     room.hintTimerEndsAt = endsAt;
-    // Broadcast so all clients can sync their local countdown
     io.to(roomId).emit("hint_timer_start", { endsAt, durationSeconds: seconds });
     hintTimers[roomId] = setTimeout(() => forceVotingPhase(roomId), seconds * 1000);
     console.log(`[hintTimer] roomId=${roomId} — started ${seconds}s timer, endsAt=${endsAt}`);
@@ -175,6 +202,7 @@ module.exports = (io, socket) => {
     const players = getActivePlayers(room);
     if (players.length < 2) return;
 
+    // Assign traitors
     room.traitorIds = [];
     const selectedIndexes = new Set();
     const numTraitors = room.config?.numTraitors ?? 1;
@@ -187,17 +215,8 @@ module.exports = (io, socket) => {
     }
     room.traitorId = room.traitorIds[0];
 
-    const use18Plus = room.config.use18Plus === true;
-    const pool = use18Plus ? [...standardWordPairs, ...adultWordPairs] : standardWordPairs;
-    const [wordA, wordB] = pool[Math.floor(Math.random() * pool.length)];
-
-    players.forEach((player) => {
-      const isTraitor = room.traitorIds.includes(player.id);
-      room.players[player.id].word = isTraitor ? wordB : wordA;
-      if (player.socketId) {
-        io.to(player.socketId).emit("game_started", { word: room.players[player.id].word });
-      }
-    });
+    // Pick & broadcast words (pool determined by 18+ flag)
+    pickAndAssignWords(roomId);
 
     resetRound(roomId);
     room.status = "playing";
@@ -252,16 +271,22 @@ module.exports = (io, socket) => {
   };
 
   // ─── START NEXT ROUND ─────────────────────────────────────────────────────────
+  // Goes back to word_assignment so players see a fresh word reveal countdown
+  // and the correct pool (standard or adult) is used every round.
   const startNextRound = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
     resetRound(roomId);
     room.lastEliminated = null;
     room.status = "playing";
-    room.currentPhase = "hint_collection";
-    io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
+    room.hintTimerEndsAt = null;
+
+    // Pick fresh words for all still-active players using the current 18+ setting
+    pickAndAssignWords(roomId);
+
+    room.currentPhase = "word_assignment";
+    io.to(roomId).emit("phase_changed", { phase: "word_assignment" });
     emitRoomUpdate(roomId, room);
-    startHintTimer(roomId);
   };
 
   // ─── END HINT COLLECTION (all submitted early) ───────────────────────────────
@@ -308,7 +333,6 @@ module.exports = (io, socket) => {
     syncPlayerState(socket, room, resolvedPlayerId);
     if (reconnected) {
       io.to(roomId).emit("PLAYER_RECONNECTED", { playerId: resolvedPlayerId, room: buildPublicRoom(room) });
-      // Re-send hint timer to the reconnecting player if it's still running
       if (room.currentPhase === "hint_collection" && room.hintTimerEndsAt) {
         socket.emit("hint_timer_start", {
           endsAt: room.hintTimerEndsAt,
