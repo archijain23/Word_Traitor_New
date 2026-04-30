@@ -30,11 +30,11 @@ function createRoom(roomId, hostId, name, socketId, config = {}) {
     revealedRoles: null,
 
     config: {
-      numTraitors: config.numTraitors || 1,
-      hintTime: config.hintTime || 30,
-      difficulty: config.difficulty || "Medium",
-      use18Plus: config.use18Plus || false,
-      anonymousVoting: config.anonymousVoting || false,
+      numTraitors: config.numTraitors ?? 1,
+      hintTime: config.hintTime ?? 30,
+      difficulty: config.difficulty ?? "Medium",
+      use18Plus: config.use18Plus === true,   // explicit boolean, never truthy-coerced
+      anonymousVoting: config.anonymousVoting === true,
     },
   };
 }
@@ -97,7 +97,6 @@ function setPlayerAuthToken(roomId, playerId, authToken) {
   return room.players[playerId];
 }
 
-// 🗳️ ADD VOTE
 function addVote(roomId, voterId, targetId) {
   const room = rooms[roomId];
   if (!room) return;
@@ -107,14 +106,12 @@ function addVote(roomId, voterId, targetId) {
   room.votes[targetId]++;
 }
 
-// 💡 ADD HINT
 function addHint(roomId, playerId, hint) {
   const room = rooms[roomId];
   if (!room) return;
   room.hints[playerId] = hint;
 }
 
-// 🔄 RESET ROUND DATA (used between rounds mid-game)
 function resetRound(roomId) {
   const room = rooms[roomId];
   if (!room) return;
@@ -124,12 +121,10 @@ function resetRound(roomId) {
   room.revealedRoles = null;
 }
 
-// 🔁 RESET ENTIRE GAME (play again — keep players, restore to lobby)
 function resetGame(roomId) {
   const room = rooms[roomId];
   if (!room) return;
 
-  // Un-eliminate all players
   Object.values(room.players).forEach((player) => {
     player.isEliminated = false;
     player.word = null;
