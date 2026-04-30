@@ -51,7 +51,7 @@ function CountdownRing({ seconds, total, label, sublabel }) {
   );
 }
 
-// ── Sticky hint-phase timer bar ─────────────────────────────────────────────
+// ── Sticky hint-phase timer bar ───────────────────────────────────────────────────────
 // Always visible to every player (submitted / not-submitted / spectator) while
 // the hint_collection phase is active, regardless of scroll position.
 function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
@@ -188,7 +188,7 @@ function Game() {
     ? Object.values(room.players).filter((p) => !p.isEliminated)
     : [];
 
-  // ─── Hint timer helpers ───────────────────────────────────────────────────────
+  // ─── Hint timer helpers ──────────────────────────────────────────────────────────────
   const clearHintInterval = () => {
     if (hintTimerRef.current) {
       clearInterval(hintTimerRef.current);
@@ -208,7 +208,7 @@ function Game() {
     hintTimerRef.current = setInterval(tick, 500);
   };
 
-  // ─── Listen for server hint timer ────────────────────────────────────────────
+  // ─── Listen for server hint timer ──────────────────────────────────────────────
   useEffect(() => {
     const handleHintTimer = ({ endsAt, durationSeconds }) => {
       startLocalHintCountdown(endsAt, durationSeconds);
@@ -220,7 +220,7 @@ function Game() {
     };
   }, []);
 
-  // ─── Word-assignment countdown ────────────────────────────────────────────────
+  // ─── Word-assignment countdown ─────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== "word_assignment") return;
     setWordCountdown(WORD_ASSIGNMENT_SECONDS);
@@ -228,6 +228,8 @@ function Game() {
       setWordCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
+          // The server guards this event against eliminated players,
+          // but we also skip emitting on the client side for cleanliness.
           socket.emit("word_reveal_done", { roomId });
           return 0;
         }
@@ -237,7 +239,7 @@ function Game() {
     return () => clearInterval(timer);
   }, [phase, roomId]);
 
-  // ─── Room updates ─────────────────────────────────────────────────────────────
+  // ─── Room updates ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const applyRoomState = (roomData) => {
       setRoom(roomData);
@@ -299,7 +301,12 @@ function Game() {
         clearHintInterval();
         setHintCountdown(0);
       }
-      if (data.phase === "word_assignment") setWordCountdown(WORD_ASSIGNMENT_SECONDS);
+      if (data.phase === "word_assignment") {
+        setWordCountdown(WORD_ASSIGNMENT_SECONDS);
+        // Clear the stale word for spectators — they won’t receive
+        // game_started so the old word would linger otherwise.
+        setWord(null);
+      }
     };
 
     const handleReturnToLobby = ({ roomId: rid }) => {
@@ -325,14 +332,14 @@ function Game() {
     };
   }, [navigate, playerId, roomId]);
 
-  // ─── Private word ─────────────────────────────────────────────────────────────
+  // ─── Private word ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleGameStarted = (data) => { setWord(data.word); setWordCountdown(WORD_ASSIGNMENT_SECONDS); };
     socket.on("game_started", handleGameStarted);
     return () => socket.off("game_started", handleGameStarted);
   }, []);
 
-  // ─── Join on mount ────────────────────────────────────────────────────────────
+  // ─── Join on mount ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!name) return;
     const session = buildPlayerSession(name);
@@ -340,7 +347,7 @@ function Game() {
     socket.emit("join_room", { roomId, name, playerId: session.playerId, authToken: session.authToken });
   }, [roomId, name]);
 
-  // ─── Reconnect ────────────────────────────────────────────────────────────────
+  // ─── Reconnect ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomId || !playerId) return;
     const handleReconnect = () => emitReconnectPlayer(roomId);
@@ -359,7 +366,7 @@ function Game() {
   const totalActive = activePlayers.length;
   const hintTimedOut = hintCountdown <= 0 && phase === "hint_collection";
 
-  // ─── Live hint feed ───────────────────────────────────────────────────────────
+  // ─── Live hint feed ───────────────────────────────────────────────────────────────
   const HintFeed = ({ showWaiting = true }) => (
     <div className="space-y-2">
       {hintEntries.length === 0 && showWaiting && (
@@ -486,34 +493,58 @@ function Game() {
           {/* 🎯 WORD ASSIGNMENT */}
           {phase === "word_assignment" && (
             <Card className="p-8 text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Your Secret Word</p>
-              <div className="mb-6">
-                <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)]">
-                  {word ?? "..."}
-                </span>
-              </div>
-              <div className="flex items-center justify-center gap-4 mb-6">
-                <CountdownRing
-                  seconds={wordCountdown}
-                  total={WORD_ASSIGNMENT_SECONDS}
-                  label="Memorize your word!"
-                  sublabel={`Hint phase starts in ${wordCountdown}s`}
-                />
-              </div>
-              <div className="w-full rounded-full bg-white/6 h-2 overflow-hidden">
-                <div
-                  className="h-2 rounded-full transition-all duration-1000 linear"
-                  style={{
-                    width: `${wordProgress}%`,
-                    background: wordCountdown <= 3
-                      ? "linear-gradient(90deg,#f87171,#ef4444)"
-                      : wordCountdown <= 6
-                      ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
-                      : "linear-gradient(90deg,#22d3ee,#a855f7)",
-                  }}
-                />
-              </div>
-              <p className="text-xs text-zinc-600 mt-3">The hint phase will begin automatically</p>
+              {isSpectator ? (
+                // Spectators never receive game_started so they have no new word.
+                // Show a neutral waiting card instead of the stale previous word.
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Next Round</p>
+                  <div className="mb-6 flex flex-col items-center gap-3">
+                    <span className="text-5xl">👁️</span>
+                    <p className="text-zinc-200 font-semibold text-lg">New words are being dealt…</p>
+                    <p className="text-zinc-500 text-sm">You are spectating this round</p>
+                  </div>
+                  <div className="flex items-center justify-center gap-4">
+                    <CountdownRing
+                      seconds={wordCountdown}
+                      total={WORD_ASSIGNMENT_SECONDS}
+                      label="Hint phase starting soon"
+                      sublabel={`Game resumes in ${wordCountdown}s`}
+                    />
+                  </div>
+                </>
+              ) : (
+                // Active players see their secret word and the memorise countdown.
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Your Secret Word</p>
+                  <div className="mb-6">
+                    <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)]">
+                      {word ?? "..."}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center gap-4 mb-6">
+                    <CountdownRing
+                      seconds={wordCountdown}
+                      total={WORD_ASSIGNMENT_SECONDS}
+                      label="Memorize your word!"
+                      sublabel={`Hint phase starts in ${wordCountdown}s`}
+                    />
+                  </div>
+                  <div className="w-full rounded-full bg-white/6 h-2 overflow-hidden">
+                    <div
+                      className="h-2 rounded-full transition-all duration-1000 linear"
+                      style={{
+                        width: `${wordProgress}%`,
+                        background: wordCountdown <= 3
+                          ? "linear-gradient(90deg,#f87171,#ef4444)"
+                          : wordCountdown <= 6
+                          ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
+                          : "linear-gradient(90deg,#22d3ee,#a855f7)",
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-600 mt-3">The hint phase will begin automatically</p>
+                </>
+              )}
             </Card>
           )}
 
@@ -609,10 +640,10 @@ function Game() {
             </div>
           )}
 
-          {/* 🗳️ VOTING */}
+          {/* 🗾 VOTING */}
           {phase === "voting" && (
             <Card className="p-8">
-              <h2 className="text-lg font-semibold mb-1">All Hints 🗳️</h2>
+              <h2 className="text-lg font-semibold mb-1">All Hints 🗾</h2>
               <p className="text-sm text-zinc-400 mb-4">Read everyone&apos;s hints and vote for the traitor.</p>
               <HintFeed showWaiting={false} />
               {isSpectator ? (
