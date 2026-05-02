@@ -296,23 +296,20 @@ module.exports = (io, socket) => {
     }
   };
 
-  // ─── START NEXT ROUND ─────────────────────────────────────────────────────────
-  // Goes back to word_assignment so players see a fresh word reveal countdown.
-  // pickAndAssignWords picks a pair not yet seen this game session.
-  const startNextRound = (roomId) => {
+  // ─── CONTINUE AFTER A CITIZEN ELIMINATION ────────────────────────────────────
+  // Keep the same secret words and move active players straight into a fresh
+  // hint phase instead of replaying word reveal.
+  const continueAfterCitizenElimination = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
     resetRound(roomId);
     room.lastEliminated = null;
     room.status = "playing";
     room.hintTimerEndsAt = null;
-
-    // Pick fresh, non-repeated words for all still-active players
-    pickAndAssignWords(roomId);
-
-    room.currentPhase = "word_assignment";
-    io.to(roomId).emit("phase_changed", { phase: "word_assignment" });
+    room.currentPhase = "hint_collection";
+    io.to(roomId).emit("phase_changed", { phase: "hint_collection" });
     emitRoomUpdate(roomId, room);
+    startHintTimer(roomId);
   };
 
   // ─── END HINT COLLECTION (all submitted early) ───────────────────────────────
@@ -457,7 +454,7 @@ module.exports = (io, socket) => {
     const room = getRoom(roomId);
     if (!room || room.currentPhase !== "round_result") return;
     if (!room.players[currentPlayerId] || room.players[currentPlayerId].isEliminated) return;
-    startNextRound(roomId);
+    continueAfterCitizenElimination(roomId);
   });
 
   socket.on("play_again", ({ roomId }) => {

@@ -2,7 +2,7 @@ import React from "react";
 
 function Layout({ children }) {
   return (
-    <div className="relative min-h-screen overflow-hidden text-white">
+    <div className="relative min-h-screen overflow-x-hidden text-white">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-10rem] top-[-8rem] h-72 w-72 rounded-full bg-cyan-400/18 blur-3xl" />
         <div className="absolute right-[-8rem] top-20 h-72 w-72 rounded-full bg-fuchsia-500/18 blur-3xl" />
@@ -10,9 +10,9 @@ function Layout({ children }) {
       </div>
 
       <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/60 backdrop-blur-2xl">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <div>
-            <h1 className="text-lg font-black tracking-[0.22em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-fuchsia-400 drop-shadow-[0_0_22px_rgba(56,189,248,0.45)] sm:text-xl">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="min-w-0">
+            <h1 className="text-base font-black tracking-[0.18em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-fuchsia-400 drop-shadow-[0_0_22px_rgba(56,189,248,0.45)] sm:text-xl sm:tracking-[0.22em]">
               WORD TRAITOR
             </h1>
             <p className="mt-1 text-[11px] uppercase tracking-[0.32em] text-cyan-100/55">
@@ -20,7 +20,7 @@ function Layout({ children }) {
             </p>
           </div>
 
-          <span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200 shadow-[0_0_30px_rgba(34,211,238,0.18)] sm:text-xs">
+          <span className="max-w-full self-stretch rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200 shadow-[0_0_30px_rgba(34,211,238,0.18)] sm:w-auto sm:self-auto sm:text-xs sm:tracking-[0.28em]">
             Live Lobby
           </span>
         </div>

@@ -94,7 +94,7 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <div className="flex items-center gap-3 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2 sm:flex-nowrap">
 
         {/* Arc ring */}
         <div className="relative shrink-0" style={{ width: 48, height: 48 }}>
@@ -121,7 +121,7 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
 
         {/* Label + progress bar */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between mb-1">
+          <div className="mb-1 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
             <span
               className="text-xs font-bold uppercase tracking-widest"
               style={{ color: ringColor, transition: "color 0.3s" }}
@@ -425,18 +425,18 @@ function Game() {
           />
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-x-hidden">
 
           {/* Header */}
-          <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
+          <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-5 sm:p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-200/80">Live Round</p>
-                <h1 className="mt-3 text-3xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80 sm:tracking-[0.35em]">Live Round</p>
+                <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">Watch the clues, trust your instincts, and vote before the bluff gets away.</p>
               </div>
-              <div className="rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)]">
-                <div className="text-[11px] uppercase tracking-[0.32em] text-fuchsia-200/70">Current Phase</div>
+              <div className="w-full rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)] md:w-auto">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-fuchsia-200/70 sm:tracking-[0.32em]">Current Phase</div>
                 <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
               </div>
             </div>
@@ -449,7 +449,7 @@ function Game() {
 
           {/* Room ID */}
           <Card className="p-6">
-            <h2 className="text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">Room: {room.roomId}</h2>
+            <h2 className="break-all text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">Room: {room.roomId}</h2>
           </Card>
 
           {/* 🏆 GAME OVER */}
@@ -553,9 +553,9 @@ function Game() {
             <div className="space-y-4">
               {/* Input card — no duplicate ring here, timer bar is always visible above */}
               <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-lg font-bold text-white">Give a Hint 💡</h2>
-                  <span className="text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
+                  <span className="w-fit text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
                     {submittedCount} / {totalActive} submitted
                   </span>
                 </div>
@@ -606,8 +606,8 @@ function Game() {
 
               {/* Live hint feed card */}
               <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="flex items-center gap-2 text-base font-bold text-white min-w-0">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
@@ -625,12 +625,12 @@ function Game() {
                       <div
                         key={p.id}
                         title={p.name}
-                        className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-300 ${
+                        className={`flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-300 ${
                           done ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-white/10 bg-white/5 text-zinc-500"
                         }`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-cyan-400" : "bg-zinc-600"}`} />
-                        {p.name}{p.id === playerId ? " (you)" : ""}
+                        <span className="truncate">{p.name}{p.id === playerId ? " (you)" : ""}</span>
                       </div>
                     );
                   })}
@@ -702,12 +702,12 @@ function Game() {
                 <>
                   <p className="text-sm text-zinc-500 mt-3">
                     {isSpectator
-                      ? "Active players will continue the next round while you spectate."
-                      : "The game will continue once a player advances the round."}
+                      ? "Active players will continue with a new hint phase while you spectate."
+                      : "The game will continue once a player starts the next hint phase."}
                   </p>
                   {!isSpectator && (
                     <Button className="mt-4 w-full" onClick={() => socket.emit("continue_round", { roomId })}>
-                      Continue to Next Round
+                      Continue to Hint Phase
                     </Button>
                   )}
                 </>

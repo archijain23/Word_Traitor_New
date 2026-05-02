@@ -6,6 +6,8 @@ html {
 
 html, body {
   height: 100%;
+  width: 100%;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top, rgba(0, 240, 255, 0.14), transparent 28%),
     radial-gradient(circle at 85% 15%, rgba(255, 34, 190, 0.16), transparent 22%),
@@ -36,6 +38,8 @@ body::before {
 
 #root {
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 /* Smooth UI feel */
