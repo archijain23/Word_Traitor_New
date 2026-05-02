@@ -11,6 +11,14 @@ const {
   resetRound,
   resetGame,
 } = require("../store/roomStore");
+const {
+  easyPairs,
+  mediumPairs,
+  hardPairs,
+  adultEasyPairs,
+  adultMediumPairs,
+  adultHardPairs,
+} = require("../data");
 
 // Per-room hint timers — keyed by roomId
 const hintTimers = {};
@@ -54,6 +62,7 @@ module.exports = (io, socket) => {
     hintCount: Object.keys(room.hints || {}).length,
     hasVoted: room.hasVoted || {},
     lastEliminated: room.lastEliminated,
+    lastVoteSummary: room.lastVoteSummary || null,
     config: room.config,
     revealedRoles: room.revealedRoles || null,
     hintTimerEndsAt: room.hintTimerEndsAt || null,
@@ -69,38 +78,37 @@ module.exports = (io, socket) => {
     return Boolean(p && p.authToken === authToken);
   };
 
-  // ─── WORD PAIRS ───────────────────────────────────────────────────────────────
-  const standardWordPairs = [
-    ["Apple", "Orange"], ["Dog", "Wolf"], ["Car", "Bike"], ["Ocean", "River"],
-    ["Doctor", "Nurse"], ["Sword", "Knife"], ["Castle", "Fort"], ["Vampire", "Zombie"],
-    ["Piano", "Guitar"], ["Football", "Rugby"], ["Astronaut", "Pilot"], ["Lion", "Tiger"],
-    ["Diamond", "Ruby"], ["Volcano", "Earthquake"], ["Pirate", "Ninja"], ["Coffee", "Tea"],
-    ["Laptop", "Tablet"], ["Subway", "Bus"], ["Chef", "Baker"], ["Museum", "Library"],
-    ["Basketball", "Volleyball"], ["Winter", "Autumn"], ["Shark", "Whale"], ["Crown", "Tiara"],
-    ["Rocket", "Missile"], ["Elephant", "Rhino"], ["Architect", "Engineer"], ["Poem", "Novel"],
-    ["Pizza", "Burger"], ["Headphones", "Speakers"], ["Lake", "Pond"], ["Witch", "Wizard"],
-    ["Painting", "Drawing"], ["Treadmill", "Bicycle"], ["Compass", "Map"], ["Ballet", "Hip Hop"],
-    ["Sunglasses", "Goggles"], ["Owl", "Hawk"], ["Thunder", "Lightning"], ["Candy", "Chocolate"],
-    ["Prison", "Jail"], ["Trumpet", "Saxophone"], ["Skiing", "Snowboarding"], ["Crocodile", "Alligator"],
-    ["Superhero", "Villain"], ["Sofa", "Chair"], ["Microwave", "Oven"], ["Whale", "Dolphin"],
-    ["Passport", "Visa"], ["Telescope", "Microscope"],
-  ];
+  const normalizeDifficulty = (difficulty) => {
+    if (difficulty === "Easy" || difficulty === "Hard") return difficulty;
+    return "Medium";
+  };
 
-  const adultWordPairs = [
-    ["Lingerie", "Bikini"], ["Hookup", "Date"], ["Condom", "Birth Control"],
-    ["Champagne", "Tequila"], ["Strip Club", "Nightclub"], ["Affair", "Crush"],
-    ["Hangover", "Headache"], ["Seduction", "Flirting"], ["One Night Stand", "Blind Date"],
-    ["Whiskey", "Beer"], ["Casino", "Arcade"], ["Divorce", "Breakup"],
-    ["Threesome", "Couple"], ["Dominatrix", "Boss"], ["Sex Tape", "Home Video"],
-    ["Brothel", "Hotel"], ["Vodka", "Gin"], ["Stripper", "Dancer"],
-    ["BDSM", "Roleplay"], ["Pornstar", "Actor"], ["Orgasm", "Climax"],
-    ["Vibrator", "Massager"], ["Escort", "Tour Guide"], ["Fetish", "Hobby"],
-    ["Lap Dance", "Salsa Dance"], ["Marijuana", "Tobacco"], ["Cocaine", "Powder"],
-    ["Orgy", "Party"], ["Nude Beach", "Water Park"], ["Safeword", "Password"],
-    ["Swingers", "Dance Partners"], ["Kink", "Quirk"], ["Bondage", "Yoga Strap"],
-    ["Sugar Daddy", "Sponsor"], ["Weed", "Herb"], ["Booty Call", "Late Night Call"],
-    ["Erotic", "Romantic"], ["Sexting", "Texting"], ["Playboy", "Magazine"], ["Cheating", "Lying"],
-  ];
+  const getWordPoolForRoom = (room) => {
+    const difficulty = normalizeDifficulty(room.config?.difficulty);
+    const use18Plus = room.config?.use18Plus === true;
+
+    const standardPools = {
+      Easy: easyPairs,
+      Medium: mediumPairs,
+      Hard: hardPairs,
+    };
+
+    const adultPools = {
+      Easy: adultEasyPairs,
+      Medium: adultMediumPairs,
+      Hard: adultHardPairs,
+    };
+
+    const pools = use18Plus ? adultPools : standardPools;
+    const fallbackPool = use18Plus ? adultMediumPairs : mediumPairs;
+    const pool = pools[difficulty] || fallbackPool;
+
+    return {
+      difficulty,
+      pool,
+      poolLabel: `${use18Plus ? "adult-" : ""}${difficulty.toLowerCase()}`,
+    };
+  };
 
   // ─── PICK & ASSIGN WORDS ─────────────────────────────────────────────────────
   //
@@ -108,15 +116,11 @@ module.exports = (io, socket) => {
   // the same game session. When the entire pool has been used up it resets
   // automatically so the game can keep going.
   //
-  // Exclusive pools: 18+ ON → only adultWordPairs; OFF → only standardWordPairs.
-  //
   const pickAndAssignWords = (roomId) => {
     const room = getRoom(roomId);
     if (!room) return;
     const players = getActivePlayers(room);
-
-    const use18Plus = room.config.use18Plus === true;
-    const pool = use18Plus ? adultWordPairs : standardWordPairs;
+    const { difficulty, pool, poolLabel } = getWordPoolForRoom(room);
 
     // Initialise tracker if missing (safety net)
     if (!room.usedPairIndexes) room.usedPairIndexes = new Set();
@@ -146,8 +150,8 @@ module.exports = (io, socket) => {
     });
 
     console.log(
-      `[words] roomId=${roomId} use18Plus=${use18Plus} idx=${idx} ` +
-        `pool=${use18Plus ? "adult" : "standard"} ` +
+      `[words] roomId=${roomId} difficulty=${difficulty} pool=${poolLabel} idx=${idx} ` +
+        `poolSize=${pool.length} ` +
         `used=${room.usedPairIndexes.size}/${pool.length} ` +
         `wordA="${wordA}" wordB="${wordB}"`
     );
@@ -265,11 +269,27 @@ module.exports = (io, socket) => {
 
     const eliminated = candidates[Math.floor(Math.random() * candidates.length)];
     const wasTraitor = room.traitorIds.includes(eliminated);
+    room.lastVoteSummary = {
+      eliminatedPlayerId: eliminated,
+      isAnonymous: room.config?.anonymousVoting === true,
+      totals: Object.entries(room.votes)
+        .map(([targetId, count]) => ({ targetId, count }))
+        .sort((a, b) => b.count - a.count),
+      votes: Object.entries(room.voteSelections || {}).map(([voterId, targetId]) => ({
+        voterId,
+        targetId,
+      })),
+    };
     markPlayerEliminated(roomId, eliminated);
     room.lastEliminated = { playerId: eliminated, wasTraitor };
     io.to(roomId).emit("player_eliminated", { playerId: eliminated, wasTraitor });
     room.currentPhase = "round_result";
-    io.to(roomId).emit("phase_changed", { phase: "round_result", eliminatedPlayer: eliminated, wasTraitor });
+    io.to(roomId).emit("phase_changed", {
+      phase: "round_result",
+      eliminatedPlayer: eliminated,
+      wasTraitor,
+      voteSummary: room.lastVoteSummary,
+    });
     emitRoomUpdate(roomId, room);
 
     if (wasTraitor) {
@@ -400,7 +420,7 @@ module.exports = (io, socket) => {
       room.config = {
         numTraitors:     config.numTraitors     ?? room.config.numTraitors     ?? 1,
         hintTime:        config.hintTime        ?? room.config.hintTime        ?? 30,
-        difficulty:      config.difficulty      ?? room.config.difficulty      ?? "Medium",
+        difficulty:      normalizeDifficulty(config.difficulty ?? room.config.difficulty),
         use18Plus:       config.use18Plus       === true,
         anonymousVoting: config.anonymousVoting === true,
       };

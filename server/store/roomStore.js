@@ -19,6 +19,7 @@ function createRoom(roomId, hostId, name, socketId, config = {}) {
     },
 
     votes: {},
+    voteSelections: {},
     hasVoted: {},
     traitorId: null,
     hints: {},
@@ -28,6 +29,7 @@ function createRoom(roomId, hostId, name, socketId, config = {}) {
     history: [],
     traitorIds: [],
     revealedRoles: null,
+    lastVoteSummary: null,
 
     config: {
       numTraitors: config.numTraitors ?? 1,
@@ -102,6 +104,7 @@ function addVote(roomId, voterId, targetId) {
   if (!room) return;
   if (room.hasVoted[voterId]) return;
   room.hasVoted[voterId] = true;
+  room.voteSelections[voterId] = targetId;
   if (!room.votes[targetId]) room.votes[targetId] = 0;
   room.votes[targetId]++;
 }
@@ -116,9 +119,11 @@ function resetRound(roomId) {
   const room = rooms[roomId];
   if (!room) return;
   room.votes = {};
+  room.voteSelections = {};
   room.hasVoted = {};
   room.hints = {};
   room.revealedRoles = null;
+  room.lastVoteSummary = null;
 }
 
 function resetGame(roomId) {
@@ -131,11 +136,13 @@ function resetGame(roomId) {
   });
 
   room.votes = {};
+  room.voteSelections = {};
   room.hasVoted = {};
   room.hints = {};
   room.traitorId = null;
   room.traitorIds = [];
   room.revealedRoles = null;
+  room.lastVoteSummary = null;
   room.lastEliminated = null;
   room.winner = null;
   room.status = "waiting";

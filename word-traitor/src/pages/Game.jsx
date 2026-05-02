@@ -13,6 +13,81 @@ import {
 } from "../lib/session";
 
 const WORD_ASSIGNMENT_SECONDS = 10;
+const RESULT_REVEAL_DELAY_MS = 950;
+const RESULT_SETTLE_DELAY_MS = 2350;
+
+let sharedAudioContext = null;
+
+function getSharedAudioContext() {
+  if (typeof window === "undefined") return null;
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  if (!sharedAudioContext) sharedAudioContext = new AudioContextCtor();
+  return sharedAudioContext;
+}
+
+function primeAudioContext() {
+  const ctx = getSharedAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+}
+
+function playImpactCue(kind) {
+  const ctx = getSharedAudioContext();
+  if (!ctx) return;
+
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+
+  const now = ctx.currentTime + 0.01;
+  const master = ctx.createGain();
+  master.connect(ctx.destination);
+
+  const playTone = ({ startAt, frequency, endFrequency = frequency, duration, volume, type }) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, startAt);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFrequency), startAt + duration);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(startAt);
+    osc.stop(startAt + duration + 0.02);
+  };
+
+  if (kind === "hint") {
+    playTone({ startAt: now, frequency: 620, endFrequency: 880, duration: 0.11, volume: 0.025, type: "triangle" });
+    return;
+  }
+
+  if (kind === "vote") {
+    playTone({ startAt: now, frequency: 240, endFrequency: 170, duration: 0.12, volume: 0.035, type: "square" });
+    return;
+  }
+
+  if (kind === "phase") {
+    playTone({ startAt: now, frequency: 430, endFrequency: 690, duration: 0.18, volume: 0.02, type: "sine" });
+    playTone({ startAt: now + 0.05, frequency: 690, endFrequency: 910, duration: 0.12, volume: 0.015, type: "triangle" });
+    return;
+  }
+
+  if (kind === "elimination") {
+    playTone({ startAt: now, frequency: 180, endFrequency: 65, duration: 0.34, volume: 0.05, type: "sawtooth" });
+    playTone({ startAt: now + 0.08, frequency: 110, endFrequency: 52, duration: 0.38, volume: 0.035, type: "triangle" });
+  }
+}
+
+function pulseVibration(pattern) {
+  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+    navigator.vibrate(pattern);
+  }
+}
 
 // ── Circular countdown ring (reused for word-assignment phase)
 function CountdownRing({ seconds, total, label, sublabel }) {
@@ -174,11 +249,19 @@ function Game() {
   const [hintCountdown, setHintCountdown] = useState(0);
   const hintTimerRef = useRef(null);
   const [eliminatedInfo, setEliminatedInfo] = useState(null);
+  const [voteSummary, setVoteSummary] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [newHintIds, setNewHintIds] = useState(new Set());
   const prevHintsRef = useRef({});
+  const resultTimersRef = useRef([]);
+  const resultSequenceKeyRef = useRef(null);
+  const phaseCueTimerRef = useRef(null);
+  const impactFlashTimerRef = useRef(null);
   // store hintTime config for the ring total
   const [hintTimeDuration, setHintTimeDuration] = useState(30);
+  const [resultStage, setResultStage] = useState("idle");
+  const [impactFlash, setImpactFlash] = useState(null);
+  const [phaseCue, setPhaseCue] = useState(null);
 
   const name = getStoredPlayerName();
   const navigate = useNavigate();
@@ -194,6 +277,48 @@ function Game() {
       clearInterval(hintTimerRef.current);
       hintTimerRef.current = null;
     }
+  };
+
+  const clearResultTimers = () => {
+    resultTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+    resultTimersRef.current = [];
+  };
+
+  const triggerImpactFlash = (mode) => {
+    setImpactFlash(mode);
+    window.clearTimeout(impactFlashTimerRef.current);
+    impactFlashTimerRef.current = window.setTimeout(() => setImpactFlash(null), mode === "elimination" ? 720 : 420);
+  };
+
+  const showPhaseCue = (label) => {
+    setPhaseCue(label);
+    window.clearTimeout(phaseCueTimerRef.current);
+    phaseCueTimerRef.current = window.setTimeout(() => setPhaseCue(null), 1300);
+  };
+
+  const runRoundResultSequence = (incomingVoteSummary, incomingEliminatedInfo) => {
+    if (!incomingEliminatedInfo?.playerId) return;
+    const sequenceKey = `${incomingEliminatedInfo.playerId}:${incomingEliminatedInfo.wasTraitor ? "traitor" : "citizen"}`;
+    if (resultSequenceKeyRef.current === sequenceKey) return;
+
+    resultSequenceKeyRef.current = sequenceKey;
+    clearResultTimers();
+    setVoteSummary(incomingVoteSummary || null);
+    setEliminatedInfo(incomingEliminatedInfo);
+    setResultStage("votes");
+    triggerImpactFlash("votes");
+    playImpactCue("phase");
+
+    resultTimersRef.current.push(window.setTimeout(() => {
+      setResultStage("elimination");
+      triggerImpactFlash("elimination");
+      playImpactCue("elimination");
+      pulseVibration([80, 40, 140]);
+    }, RESULT_REVEAL_DELAY_MS));
+
+    resultTimersRef.current.push(window.setTimeout(() => {
+      setResultStage("resolved");
+    }, RESULT_SETTLE_DELAY_MS));
   };
 
   const startLocalHintCountdown = (endsAt, durationSeconds) => {
@@ -217,6 +342,19 @@ function Game() {
     return () => {
       socket.off("hint_timer_start", handleHintTimer);
       clearHintInterval();
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => primeAudioContext();
+    window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    window.addEventListener("keydown", unlockAudio);
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+      clearResultTimers();
+      window.clearTimeout(phaseCueTimerRef.current);
+      window.clearTimeout(impactFlashTimerRef.current);
     };
   }, []);
 
@@ -245,6 +383,7 @@ function Game() {
       setRoom(roomData);
       if (roomData.currentPhase) setPhase(roomData.currentPhase);
       if (roomData.lastEliminated) setEliminatedInfo(roomData.lastEliminated);
+      if (roomData.lastVoteSummary) setVoteSummary(roomData.lastVoteSummary);
       if (roomData.config?.hintTime) setHintTimeDuration(roomData.config.hintTime);
       if (roomData.hints) {
         const prev = prevHintsRef.current;
@@ -252,6 +391,7 @@ function Game() {
         const fresh = Object.keys(incoming).filter((k) => !prev[k]);
         if (fresh.length > 0) {
           setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((k) => n.add(k)); return n; });
+          playImpactCue("hint");
           setTimeout(() => {
             setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((k) => n.delete(k)); return n; });
           }, 600);
@@ -266,6 +406,9 @@ function Game() {
       // Sync hint countdown from server timestamp if mid-phase
       if (roomData.hintTimerEndsAt && roomData.currentPhase === "hint_collection") {
         startLocalHintCountdown(roomData.hintTimerEndsAt, roomData.config?.hintTime ?? 30);
+      }
+      if (roomData.currentPhase === "round_result" && roomData.lastEliminated) {
+        runRoundResultSequence(roomData.lastVoteSummary, roomData.lastEliminated);
       }
     };
 
@@ -288,11 +431,18 @@ function Game() {
         setSubmittedHint(false);
         setHint("");
         setEliminatedInfo(null);
+        setVoteSummary(null);
+        setResultStage("idle");
+        resultSequenceKeyRef.current = null;
         prevHintsRef.current = {};
         setHints({});
+        showPhaseCue("Hint phase");
       }
       if (data.phase === "round_result") {
-        setEliminatedInfo({ playerId: data.eliminatedPlayer, wasTraitor: data.wasTraitor });
+        runRoundResultSequence(
+          data.voteSummary,
+          { playerId: data.eliminatedPlayer, wasTraitor: data.wasTraitor }
+        );
         clearHintInterval();
         setHintCountdown(0);
       }
@@ -300,12 +450,19 @@ function Game() {
         setHasVoted(false);
         clearHintInterval();
         setHintCountdown(0);
+        showPhaseCue("Voting time");
+        triggerImpactFlash("votes");
+        playImpactCue("phase");
       }
       if (data.phase === "word_assignment") {
         setWordCountdown(WORD_ASSIGNMENT_SECONDS);
+        setVoteSummary(null);
+        setResultStage("idle");
+        resultSequenceKeyRef.current = null;
         // Clear the stale word for spectators — they won’t receive
         // game_started so the old word would linger otherwise.
         setWord(null);
+        showPhaseCue("New words");
       }
     };
 
@@ -334,7 +491,12 @@ function Game() {
 
   // ─── Private word ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleGameStarted = (data) => { setWord(data.word); setWordCountdown(WORD_ASSIGNMENT_SECONDS); };
+    const handleGameStarted = (data) => {
+      setWord(data.word);
+      setWordCountdown(WORD_ASSIGNMENT_SECONDS);
+      showPhaseCue("Your word");
+      playImpactCue("phase");
+    };
     socket.on("game_started", handleGameStarted);
     return () => socket.off("game_started", handleGameStarted);
   }, []);
@@ -365,6 +527,10 @@ function Game() {
   const submittedCount = hintEntries.length;
   const totalActive = activePlayers.length;
   const hintTimedOut = hintCountdown <= 0 && phase === "hint_collection";
+  const voteLines = voteSummary?.votes || [];
+  const voteTotals = voteSummary?.totals || [];
+  const eliminatedPlayerName = room.players[eliminatedInfo?.playerId]?.name || "A player";
+  const totalVotesCast = voteLines.length || voteTotals.reduce((sum, entry) => sum + entry.count, 0);
 
   // ─── Live hint feed ───────────────────────────────────────────────────────────────
   const HintFeed = ({ showWaiting = true }) => (
@@ -412,9 +578,55 @@ function Game() {
           60%  { transform: scale(1.03) translateY(-2px); opacity: 1; }
           100% { transform: scale(1) translateY(0); opacity: 1; }
         }
+
+        @keyframes phaseCueIn {
+          0% { transform: translate(-50%, -24px) scale(0.94); opacity: 0; }
+          18% { opacity: 1; }
+          100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+        }
+
+        @keyframes voteBeam {
+          0% { transform: translateX(-10px); opacity: 0; }
+          100% { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes eliminatedCard {
+          0% { transform: scale(0.92) translateY(20px); opacity: 0; filter: saturate(0.7); }
+          45% { transform: scale(1.06) translateY(-6px); opacity: 1; }
+          100% { transform: scale(1) translateY(0); opacity: 1; filter: saturate(1); }
+        }
+
+        @keyframes eliminatedStamp {
+          0% { transform: rotate(-8deg) scale(1.4); opacity: 0; }
+          65% { transform: rotate(-8deg) scale(0.92); opacity: 1; }
+          100% { transform: rotate(-8deg) scale(1); opacity: 1; }
+        }
       `}</style>
 
       <Layout>
+        {impactFlash && (
+          <div
+            className={`pointer-events-none fixed inset-0 z-40 transition-opacity duration-500 ${
+              impactFlash === "elimination" ? "bg-rose-500/18" : "bg-cyan-400/10"
+            }`}
+            style={{
+              boxShadow:
+                impactFlash === "elimination"
+                  ? "inset 0 0 220px rgba(244,63,94,0.32)"
+                  : "inset 0 0 180px rgba(34,211,238,0.18)",
+            }}
+          />
+        )}
+
+        {phaseCue && (
+          <div
+            className="pointer-events-none fixed left-1/2 top-6 z-50 rounded-full border border-white/12 bg-slate-950/88 px-5 py-2 text-xs font-black uppercase tracking-[0.3em] text-white shadow-[0_20px_60px_-25px_rgba(34,211,238,0.55)]"
+            style={{ animation: "phaseCueIn 0.28s cubic-bezier(0.22,1,0.36,1)" }}
+          >
+            {phaseCue}
+          </div>
+        )}
+
         {/* ⏱ Sticky timer bar — visible to ALL players during hint phase */}
         {phase === "hint_collection" && (
           <HintTimerBar
@@ -572,6 +784,9 @@ function Game() {
                       onChange={(e) => setHint(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && hint.trim()) {
+                          primeAudioContext();
+                          playImpactCue("hint");
+                          pulseVibration(18);
                           socket.emit("submit_hint", { roomId, hint: hint.trim() });
                           setSubmittedHint(true);
                         }
@@ -584,6 +799,9 @@ function Game() {
                     <Button
                       onClick={() => {
                         if (!hint.trim()) return;
+                        primeAudioContext();
+                        playImpactCue("hint");
+                        pulseVibration(18);
                         socket.emit("submit_hint", { roomId, hint: hint.trim() });
                         setSubmittedHint(true);
                       }}
@@ -661,16 +879,26 @@ function Game() {
                         onClick={() => setSelectedPlayer(p.id)}
                         className={`flex justify-between rounded-2xl border p-4 cursor-pointer transition ${
                           selectedPlayer === p.id
-                            ? "border-rose-300/40 bg-rose-400/14"
+                            ? "border-rose-300/45 bg-rose-400/14 shadow-[0_0_28px_rgba(251,113,133,0.2)]"
                             : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
                         }`}
-                      >{p.name}</div>
+                      >
+                        <span className="font-semibold text-white">{p.name}</span>
+                        <span className={`text-xs font-black uppercase tracking-[0.24em] ${
+                          selectedPlayer === p.id ? "text-rose-200" : "text-zinc-500"
+                        }`}>
+                          {selectedPlayer === p.id ? "Targeted" : "Tap to accuse"}
+                        </span>
+                      </div>
                     ))}
                   </div>
                   <Button
                     className="mt-4 w-full"
                     onClick={() => {
                       if (!selectedPlayer) return;
+                      primeAudioContext();
+                      playImpactCue("vote");
+                      pulseVibration(24);
                       socket.emit("vote_player", { roomId, targetId: selectedPlayer });
                       setHasVoted(true);
                       setSelectedPlayer(null);
@@ -687,23 +915,146 @@ function Game() {
           {/* 🧾 ROUND RESULT */}
           {phase === "round_result" && eliminatedInfo && (
             <Card className="p-8">
-              <h2 className="text-lg font-semibold mb-3">Voting Result</h2>
-              <p className="text-sm text-zinc-400 mb-4">
-                {room.players[eliminatedInfo.playerId]?.name || "A player"} was voted out.
-              </p>
-              <div className="rounded-2xl border border-white/10 bg-slate-950/82 p-4">
+              <div className="mb-6 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-200/80">Round result</p>
+                  <h2 className="mt-2 text-2xl font-black text-white">The votes are in.</h2>
+                  <p className="mt-2 text-sm text-zinc-400">
+                    {voteSummary?.isAnonymous
+                      ? "Vote totals are revealed, but individual ballots stayed anonymous."
+                      : "Every ballot is on the table."}
+                  </p>
+                </div>
+                <div className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-[0.26em] ${
+                  resultStage === "resolved"
+                    ? "border-white/12 bg-white/6 text-white"
+                    : "border-cyan-300/25 bg-cyan-400/10 text-cyan-200"
+                }`}>
+                  {resultStage === "votes" ? "Revealing votes" : resultStage === "elimination" ? "Elimination" : "Resolved"}
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-[24px] border border-white/10 bg-slate-950/78 p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold uppercase tracking-[0.24em] text-zinc-300">Vote Reveal</h3>
+                    <span className="text-xs text-zinc-500">{voteLines.length} ballot{voteLines.length === 1 ? "" : "s"}</span>
+                  </div>
+
+                  {!voteSummary?.isAnonymous && voteLines.length > 0 && (
+                    <div className="space-y-2">
+                      {voteLines.map(({ voterId, targetId }, index) => (
+                        <div
+                          key={`${voterId}-${targetId}`}
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3"
+                          style={{
+                            animation: "voteBeam 0.3s ease-out both",
+                            animationDelay: `${index * 90}ms`,
+                            opacity: resultStage === "votes" || resultStage === "elimination" || resultStage === "resolved" ? 1 : 0,
+                          }}
+                        >
+                          <span className="min-w-0 truncate font-semibold text-white">
+                            {room.players[voterId]?.name || "Unknown"}{voterId === playerId ? " (you)" : ""}
+                          </span>
+                          <span className="shrink-0 text-xs font-black uppercase tracking-[0.24em] text-rose-200/75">voted</span>
+                          <span className="min-w-0 truncate text-right font-semibold text-rose-300">
+                            {room.players[targetId]?.name || "Unknown"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {voteSummary?.isAnonymous && (
+                    <div className="rounded-2xl border border-amber-300/18 bg-amber-400/8 px-4 py-3 text-sm text-amber-100">
+                      Anonymous voting is enabled for this room, so only the totals are shown below.
+                    </div>
+                  )}
+
+                  <div className="mt-4 space-y-2">
+                    {voteTotals.map(({ targetId, count }) => {
+                      const totalVotes = Math.max(totalVotesCast, 1);
+                      const width = `${Math.max((count / totalVotes) * 100, 12)}%`;
+                      const isEliminatedTarget = targetId === eliminatedInfo.playerId;
+                      return (
+                        <div
+                          key={targetId}
+                          className={`rounded-2xl border p-4 ${
+                            isEliminatedTarget
+                              ? "border-rose-300/30 bg-rose-500/10"
+                              : "border-white/8 bg-white/4"
+                          }`}
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span className="font-semibold text-white">{room.players[targetId]?.name || "Unknown"}</span>
+                            <span className={`text-sm font-black ${isEliminatedTarget ? "text-rose-300" : "text-cyan-300"}`}>
+                              {count} vote{count === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-white/6">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isEliminatedTarget ? "bg-gradient-to-r from-rose-400 to-orange-300" : "bg-gradient-to-r from-cyan-400 to-fuchsia-400"
+                              }`}
+                              style={{ width }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div
+                  className={`relative overflow-hidden rounded-[24px] border p-5 ${
+                    eliminatedInfo.wasTraitor
+                      ? "border-emerald-300/24 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.18),transparent_55%),linear-gradient(135deg,rgba(6,78,59,0.82),rgba(10,10,18,0.96))]"
+                      : "border-rose-300/24 bg-[radial-gradient(circle_at_top,rgba(251,113,133,0.18),transparent_55%),linear-gradient(135deg,rgba(76,5,25,0.82),rgba(10,10,18,0.96))]"
+                  }`}
+                  style={{
+                    animation: resultStage === "elimination" || resultStage === "resolved" ? "eliminatedCard 0.55s cubic-bezier(0.22,1,0.36,1)" : "none",
+                  }}
+                >
+                  <div className="relative z-10">
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/65">Eliminated</p>
+                    <h3 className="mt-3 text-3xl font-black text-white">{eliminatedPlayerName}</h3>
+                    <p className="mt-3 text-sm text-white/80">
+                      {eliminatedInfo.wasTraitor
+                        ? "The bluff cracked. Citizens found the traitor."
+                        : "Wrong call. The real traitor is still hidden in the room."}
+                    </p>
+
+                    {(resultStage === "elimination" || resultStage === "resolved") && (
+                      <div
+                        className={`mt-6 inline-flex rounded-full border px-4 py-2 text-sm font-black uppercase tracking-[0.26em] ${
+                          eliminatedInfo.wasTraitor
+                            ? "border-emerald-200/30 bg-emerald-300/15 text-emerald-100"
+                            : "border-rose-200/30 bg-rose-300/15 text-rose-100"
+                        }`}
+                        style={{ animation: "eliminatedStamp 0.4s cubic-bezier(0.34,1.56,0.64,1)" }}
+                      >
+                        {eliminatedInfo.wasTraitor ? "Traitor exposed" : "Citizen down"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/72 p-4">
                 <p className="text-white font-semibold">
                   {eliminatedInfo.wasTraitor
-                    ? "They were the traitor! Citizens win this round."
-                    : "They were not the traitor. The game continues..."}
+                    ? "They were the traitor. Citizens win this round."
+                    : "They were not the traitor. The game continues."}
                 </p>
               </div>
+
               {!eliminatedInfo.wasTraitor && (
                 <>
                   <p className="text-sm text-zinc-500 mt-3">
                     {isSpectator
                       ? "Active players will continue with a new hint phase while you spectate."
-                      : "The game will continue once a player starts the next hint phase."}
+                      : "Launch the next hint phase when everyone has seen the result."}
                   </p>
                   {!isSpectator && (
                     <Button className="mt-4 w-full" onClick={() => socket.emit("continue_round", { roomId })}>

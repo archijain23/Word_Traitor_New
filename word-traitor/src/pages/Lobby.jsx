@@ -35,6 +35,13 @@ function Lobby() {
   useEffect(() => {
     const applyRoomState = (roomData) => {
       setRoom(roomData);
+      if (roomData.config) {
+        setNumTraitors(roomData.config.numTraitors ?? 1);
+        setHintTime(roomData.config.hintTime ?? 30);
+        setDifficulty(roomData.config.difficulty ?? "Medium");
+        setUse18Plus(roomData.config.use18Plus === true);
+        setAnonymousVoting(roomData.config.anonymousVoting === true);
+      }
       if (roomData.status === "playing") {
         navigate(`/game/${roomData.roomId}`);
       }
