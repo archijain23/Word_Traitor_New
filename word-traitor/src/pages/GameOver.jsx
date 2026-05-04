@@ -93,17 +93,17 @@ function GameOver() {
   return (
     <Layout>
       <div className="mx-auto w-full max-w-3xl">
-        <div className="relative overflow-hidden rounded-[36px] border border-white/8 bg-[#0a0f19] shadow-[0_35px_120px_-55px_rgba(0,0,0,0.95)]">
+        <div className="relative overflow-hidden rounded-[28px] border border-white/8 bg-[#0a0f19] shadow-[0_35px_120px_-55px_rgba(0,0,0,0.95)] sm:rounded-[36px]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.06),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_42%)]" />
           <div className="pointer-events-none absolute -right-16 top-10 h-36 w-36 rounded-full bg-cyan-400/8 blur-3xl" />
           <div className="pointer-events-none absolute -left-12 bottom-0 h-40 w-40 rounded-full bg-fuchsia-500/8 blur-3xl" />
 
           <div className="relative z-10 grid gap-0 md:grid-cols-[1.05fr_0.95fr]">
-            <div className="border-b border-white/6 p-8 md:border-b-0 md:border-r">
-              <div className="inline-flex rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+            <div className="border-b border-white/6 p-5 sm:p-8 md:border-b-0 md:border-r">
+              <div className="inline-flex max-w-full rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400 sm:text-[11px] sm:tracking-[0.28em]">
                 Final Result
               </div>
-              <h1 className="mt-6 text-4xl font-black tracking-tight text-white sm:text-5xl">
+              <h1 className="mt-5 text-3xl font-black tracking-tight text-white sm:mt-6 sm:text-5xl">
                 Game Over
               </h1>
               <p className="mt-4 max-w-md text-sm leading-6 text-zinc-400">
@@ -111,19 +111,19 @@ function GameOver() {
               </p>
 
               <div className={`mt-8 rounded-[28px] border border-white/8 bg-gradient-to-br ${winnerAccent} p-[1px] shadow-[0_0_60px_rgba(255,255,255,0.05)]`}>
-                <div className="rounded-[27px] bg-[#0d1320] px-6 py-5">
-                  <div className="text-[11px] uppercase tracking-[0.3em] text-white/55">
+                <div className="rounded-[27px] bg-[#0d1320] px-5 py-5 sm:px-6">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-white/55 sm:text-[11px] sm:tracking-[0.3em]">
                     Winner
                   </div>
-                  <div className="mt-3 text-2xl font-black text-white">
+                  <div className="mt-3 text-xl font-black text-white sm:text-2xl">
                     {winner ? winnerText : "Waiting for result..."}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="p-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">
+            <div className="p-5 sm:p-8">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[11px] sm:tracking-[0.3em]">
                 Room Summary
               </div>
 
@@ -132,7 +132,7 @@ function GameOver() {
                   {Object.values(room.players).map((player) => (
                     <div
                       key={player.id}
-                      className="flex items-center justify-between rounded-[22px] border border-white/7 bg-white/[0.03] px-4 py-3"
+                      className="flex flex-col gap-2 rounded-[22px] border border-white/7 bg-white/[0.03] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div>
                         <div className="font-semibold text-white">{player.name}</div>

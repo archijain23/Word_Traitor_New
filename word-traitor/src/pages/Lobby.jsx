@@ -141,20 +141,20 @@ function Lobby() {
       <div className="space-y-6">
 
         {/* Hero header */}
-        <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,16,38,0.94),rgba(21,12,44,0.88))] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_28px_90px_-38px_rgba(34,211,238,0.38)]">
+        <div className="rounded-[24px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,16,38,0.94),rgba(21,12,44,0.88))] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_28px_90px_-38px_rgba(34,211,238,0.38)] sm:rounded-[28px] sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-200/80">Room Control</p>
-              <h1 className="mt-3 text-3xl font-black text-white sm:text-4xl">Build your glowing trap</h1>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200/80 sm:text-xs sm:tracking-[0.35em]">Room Control</p>
+              <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl">Build your glowing trap</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">
                 {isHost
                   ? "Tune the room, invite the crew, and launch the round when everyone is in."
                   : "Sit tight — the host is setting things up. You'll jump in when the game starts."}
               </p>
             </div>
-            <div className="rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-400/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)]">
-              <div className="text-[11px] uppercase tracking-[0.32em] text-fuchsia-200/75">Share Code</div>
-              <div className="mt-2 text-2xl font-black tracking-[0.28em] text-fuchsia-200">{room.roomId}</div>
+            <div className="w-full rounded-[20px] border border-fuchsia-300/18 bg-fuchsia-400/8 px-4 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)] lg:w-auto">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-fuchsia-200/75 sm:text-[11px] sm:tracking-[0.32em]">Share Code</div>
+              <div className="mt-2 break-all text-xl font-black tracking-[0.18em] text-fuchsia-200 sm:text-2xl sm:tracking-[0.28em]">{room.roomId}</div>
             </div>
           </div>
         </div>
@@ -165,13 +165,13 @@ function Lobby() {
           {/* LEFT COLUMN */}
           {isHost ? (
             /* HOST: full settings panel */
-            <Card className="p-8">
+            <Card className="p-5 sm:p-8">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Settings</p>
-                  <h2 className="text-3xl font-bold text-white mt-2">Configure your lobby</h2>
+                  <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Configure your lobby</h2>
                 </div>
-                <div className="rounded-2xl border border-cyan-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300">
+                <div className="w-full rounded-2xl border border-cyan-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300 sm:w-auto">
                   Room Code: <span className="text-cyan-300">{room.roomId}</span>
                 </div>
               </div>
@@ -242,15 +242,15 @@ function Lobby() {
             </Card>
           ) : (
             /* PLAYER: read-only game info */
-            <Card className="p-8">
+            <Card className="p-5 sm:p-8">
               <div className="mb-8">
                 <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Info</p>
-                <h2 className="text-3xl font-bold text-white mt-2">Room settings</h2>
+                <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Room settings</h2>
                 <p className="text-zinc-400 text-sm mt-2">Configured by the host — settings are locked until the game starts.</p>
               </div>
               <div className="grid gap-3 mb-6">
                 {configRows.map(({ label, value }) => (
-                  <div key={label} className="flex items-center justify-between rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-4">
+                  <div key={label} className="flex flex-col gap-1 rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-sm text-zinc-400">{label}</span>
                     <span className="text-sm font-semibold text-white">{value}</span>
                   </div>
@@ -267,7 +267,7 @@ function Lobby() {
 
           {/* RIGHT COLUMN: player list + invite */}
           <div className="space-y-6">
-            <Card className="p-6 bg-slate-950/78 border border-fuchsia-300/14">
+            <Card className="border border-fuchsia-300/14 bg-slate-950/78 p-5 sm:p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-fuchsia-300 font-semibold">
@@ -275,15 +275,15 @@ function Lobby() {
                   </p>
                   <h3 className="text-2xl font-bold text-white">Lobby</h3>
                 </div>
-                <div className="rounded-2xl border border-fuchsia-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300">
+                <div className="w-full rounded-2xl border border-fuchsia-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300 sm:w-auto">
                   <span className="font-semibold text-cyan-300">Host:</span> {room.players[room.hostId]?.name || "Unknown"}
                 </div>
               </div>
               <div className="space-y-3">
                 {Object.values(room.players).map((p) => (
-                  <div key={p.id} className="rounded-3xl border border-white/6 bg-[linear-gradient(135deg,rgba(17,24,39,0.9),rgba(26,16,44,0.82))] p-4 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="font-semibold text-white">{p.name}</p>
+                  <div key={p.id} className="flex flex-col gap-3 rounded-3xl border border-white/6 bg-[linear-gradient(135deg,rgba(17,24,39,0.9),rgba(26,16,44,0.82))] p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold text-white">{p.name}</p>
                       <p className="text-xs text-zinc-500">
                         {p.id === room.hostId ? "Host" : "Player"} • {p.online ? "Online" : "Offline"}
                       </p>
@@ -296,25 +296,25 @@ function Lobby() {
               </div>
             </Card>
 
-            <Card className="p-6 bg-slate-950/78 border border-cyan-300/14">
+            <Card className="border border-cyan-300/14 bg-slate-950/78 p-5 sm:p-6">
               <div className="mb-4">
                 <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Invite Players</p>
                 <p className="text-zinc-400 text-sm mt-1">Share this link to join directly.</p>
               </div>
               <div className="rounded-3xl border border-cyan-300/12 bg-slate-950/82 p-4 mb-4">
                 <p className="text-xs text-zinc-500 mb-2">Invite link</p>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     readOnly
                     value={`${window.location.origin}/lobby/${room.roomId}`}
-                    className="flex-1 rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white"
+                    className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white"
                   />
                   <Button
                     onClick={() => {
                       navigator.clipboard.writeText(`${window.location.origin}/lobby/${room.roomId}`);
                       alert("Link copied to clipboard!");
                     }}
-                    className="px-5"
+                    className="w-full px-5 sm:w-auto"
                   >
                     Copy
                   </Button>

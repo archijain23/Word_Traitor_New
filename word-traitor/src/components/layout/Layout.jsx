@@ -10,9 +10,9 @@ function Layout({ children }) {
       </div>
 
       <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/60 backdrop-blur-2xl">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
           <div className="min-w-0">
-            <h1 className="text-base font-black tracking-[0.18em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-fuchsia-400 drop-shadow-[0_0_22px_rgba(56,189,248,0.45)] sm:text-xl sm:tracking-[0.22em]">
+            <h1 className="text-sm font-black tracking-[0.14em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-fuchsia-400 drop-shadow-[0_0_22px_rgba(56,189,248,0.45)] sm:text-xl sm:tracking-[0.22em]">
               WORD TRAITOR
             </h1>
             <p className="mt-1 text-[11px] uppercase tracking-[0.32em] text-cyan-100/55">
@@ -20,13 +20,13 @@ function Layout({ children }) {
             </p>
           </div>
 
-          <span className="max-w-full self-stretch rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200 shadow-[0_0_30px_rgba(34,211,238,0.18)] sm:w-auto sm:self-auto sm:text-xs sm:tracking-[0.28em]">
+          <span className="max-w-full self-stretch rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200 shadow-[0_0_30px_rgba(34,211,238,0.18)] sm:w-auto sm:self-auto sm:text-xs sm:tracking-[0.28em]">
             Live Lobby
           </span>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 px-3 py-5 sm:px-6 sm:py-8">
         <div className="w-full">{children}</div>
       </main>
 

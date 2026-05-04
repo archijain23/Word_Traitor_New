@@ -620,7 +620,7 @@ function Game() {
 
         {phaseCue && (
           <div
-            className="pointer-events-none fixed left-1/2 top-6 z-50 rounded-full border border-white/12 bg-slate-950/88 px-5 py-2 text-xs font-black uppercase tracking-[0.3em] text-white shadow-[0_20px_60px_-25px_rgba(34,211,238,0.55)]"
+            className="pointer-events-none fixed left-1/2 top-4 z-50 max-w-[calc(100vw-1.5rem)] -translate-x-1/2 rounded-full border border-white/12 bg-slate-950/88 px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white shadow-[0_20px_60px_-25px_rgba(34,211,238,0.55)] sm:top-6 sm:px-5 sm:text-xs sm:tracking-[0.3em]"
             style={{ animation: "phaseCueIn 0.28s cubic-bezier(0.22,1,0.36,1)" }}
           >
             {phaseCue}
@@ -640,15 +640,15 @@ function Game() {
         <div className="space-y-6 overflow-x-hidden">
 
           {/* Header */}
-          <div className="rounded-[28px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-5 sm:p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
+          <div className="rounded-[24px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-4 sm:rounded-[28px] sm:p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80 sm:tracking-[0.35em]">Live Round</p>
-                <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80 sm:text-xs sm:tracking-[0.35em]">Live Round</p>
+                <h1 className="mt-3 text-xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">Watch the clues, trust your instincts, and vote before the bluff gets away.</p>
               </div>
               <div className="w-full rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)] md:w-auto">
-                <div className="text-[11px] uppercase tracking-[0.24em] text-fuchsia-200/70 sm:tracking-[0.32em]">Current Phase</div>
+                <div className="text-[10px] uppercase tracking-[0.14em] text-fuchsia-200/70 sm:text-[11px] sm:tracking-[0.32em]">Current Phase</div>
                 <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
               </div>
             </div>
@@ -660,13 +660,13 @@ function Game() {
           </div>
 
           {/* Room ID */}
-          <Card className="p-6">
+          <Card className="p-5 sm:p-6">
             <h2 className="break-all text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">Room: {room.roomId}</h2>
           </Card>
 
           {/* 🏆 GAME OVER */}
           {phase === "game_over" && (
-            <Card className="p-8 text-center">
+            <Card className="p-5 text-center sm:p-8">
               <div className="text-5xl mb-4">{room.winner === "civilians" ? "🎉" : "🕵️"}</div>
               <h2 className="text-2xl font-black text-white mb-2">
                 {room.winner === "civilians" ? "Civilians Win!" : "Traitor Wins!"}
@@ -678,7 +678,7 @@ function Game() {
                 <div className="space-y-2 mb-8 text-left">
                   <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">Roles Revealed</p>
                   {Object.entries(room.revealedRoles).map(([pid, role]) => (
-                    <div key={pid} className={`flex justify-between rounded-2xl border p-4 ${
+                    <div key={pid} className={`flex flex-col gap-2 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
                       role === "traitor" ? "border-rose-400/30 bg-rose-500/10" : "border-white/8 bg-slate-950/70"
                     }`}>
                       <span className="text-white font-semibold">{room.players[pid]?.name || "Unknown"}</span>
@@ -704,7 +704,7 @@ function Game() {
 
           {/* 🎯 WORD ASSIGNMENT */}
           {phase === "word_assignment" && (
-            <Card className="p-8 text-center">
+            <Card className="p-5 text-center sm:p-8">
               {isSpectator ? (
                 // Spectators never receive game_started so they have no new word.
                 // Show a neutral waiting card instead of the stale previous word.
@@ -729,7 +729,7 @@ function Game() {
                 <>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Your Secret Word</p>
                   <div className="mb-6">
-                    <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)]">
+                    <span className="break-words text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] sm:text-5xl">
                       {word ?? "..."}
                     </span>
                   </div>
@@ -764,7 +764,7 @@ function Game() {
           {phase === "hint_collection" && (
             <div className="space-y-4">
               {/* Input card — no duplicate ring here, timer bar is always visible above */}
-              <Card className="p-6">
+              <Card className="p-5 sm:p-6">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-lg font-bold text-white">Give a Hint 💡</h2>
                   <span className="w-fit text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
@@ -823,7 +823,7 @@ function Game() {
               </Card>
 
               {/* Live hint feed card */}
-              <Card className="p-6">
+              <Card className="p-5 sm:p-6">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="flex items-center gap-2 text-base font-bold text-white min-w-0">
                     <span className="relative flex h-2 w-2">
@@ -860,7 +860,7 @@ function Game() {
 
           {/* 🗾 VOTING */}
           {phase === "voting" && (
-            <Card className="p-8">
+            <Card className="p-5 sm:p-8">
               <h2 className="text-lg font-semibold mb-1">All Hints 🗾</h2>
               <p className="text-sm text-zinc-400 mb-4">Read everyone&apos;s hints and vote for the traitor.</p>
               <HintFeed showWaiting={false} />
@@ -877,7 +877,7 @@ function Game() {
                       <div
                         key={p.id}
                         onClick={() => setSelectedPlayer(p.id)}
-                        className={`flex justify-between rounded-2xl border p-4 cursor-pointer transition ${
+                        className={`flex flex-col gap-2 rounded-2xl border p-4 transition sm:flex-row sm:items-center sm:justify-between ${
                           selectedPlayer === p.id
                             ? "border-rose-300/45 bg-rose-400/14 shadow-[0_0_28px_rgba(251,113,133,0.2)]"
                             : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
@@ -914,8 +914,8 @@ function Game() {
 
           {/* 🧾 ROUND RESULT */}
           {phase === "round_result" && eliminatedInfo && (
-            <Card className="p-8">
-              <div className="mb-6 flex items-start justify-between gap-4">
+            <Card className="p-5 sm:p-8">
+              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-200/80">Round result</p>
                   <h2 className="mt-2 text-2xl font-black text-white">The votes are in.</h2>
@@ -925,7 +925,7 @@ function Game() {
                       : "Every ballot is on the table."}
                   </p>
                 </div>
-                <div className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-[0.26em] ${
+                <div className={`w-fit rounded-full border px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] sm:text-[11px] sm:tracking-[0.26em] ${
                   resultStage === "resolved"
                     ? "border-white/12 bg-white/6 text-white"
                     : "border-cyan-300/25 bg-cyan-400/10 text-cyan-200"
@@ -946,7 +946,7 @@ function Game() {
                       {voteLines.map(({ voterId, targetId }, index) => (
                         <div
                           key={`${voterId}-${targetId}`}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3"
+                          className="flex flex-col gap-2 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                           style={{
                             animation: "voteBeam 0.3s ease-out both",
                             animationDelay: `${index * 90}ms`,
@@ -1017,7 +1017,7 @@ function Game() {
                 >
                   <div className="relative z-10">
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/65">Eliminated</p>
-                    <h3 className="mt-3 text-3xl font-black text-white">{eliminatedPlayerName}</h3>
+                    <h3 className="mt-3 break-words text-2xl font-black text-white sm:text-3xl">{eliminatedPlayerName}</h3>
                     <p className="mt-3 text-sm text-white/80">
                       {eliminatedInfo.wasTraitor
                         ? "The bluff cracked. Citizens found the traitor."
