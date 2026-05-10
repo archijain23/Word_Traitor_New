@@ -8,6 +8,7 @@ const {
   addHint,
   markPlayerEliminated,
   setPlayerAuthToken,
+  updatePlayerName,
   resetRound,
   resetGame,
 } = require("../store/roomStore");
@@ -59,6 +60,7 @@ module.exports = (io, socket) => {
     winner: room.winner || null,
     players: buildPublicPlayers(room),
     hints: room.hints,
+    hintHistory: room.hintHistory || [],
     hintCount: Object.keys(room.hints || {}).length,
     hasVoted: room.hasVoted || {},
     lastEliminated: room.lastEliminated,
@@ -171,6 +173,7 @@ module.exports = (io, socket) => {
     history: room.history || [],
     wordProgress: {
       hints: room.hints,
+      hintHistory: room.hintHistory || [],
       votes: room.votes,
       hasVoted: room.hasVoted,
       lastEliminated: room.lastEliminated,
@@ -251,6 +254,7 @@ module.exports = (io, socket) => {
     resetRound(roomId);
     room.status = "playing";
     room.currentPhase = "word_assignment";
+    room.currentHintRound = 1;
     room.hintTimerEndsAt = null;
     emitRoomUpdate(roomId, room);
   };
@@ -323,6 +327,7 @@ module.exports = (io, socket) => {
     const room = getRoom(roomId);
     if (!room) return;
     resetRound(roomId);
+    room.currentHintRound += 1;
     room.lastEliminated = null;
     room.status = "playing";
     room.hintTimerEndsAt = null;
@@ -410,6 +415,29 @@ module.exports = (io, socket) => {
     if (currentRoom === roomId) { currentRoom = null; currentPlayerId = null; }
     const room = getRoom(roomId);
     if (room) emitRoomUpdate(roomId, room);
+  });
+
+  socket.on("update_player_name", ({ roomId, name, authToken }) => {
+    const room = getRoom(roomId);
+    const nextName = typeof name === "string" ? name.trim() : "";
+    if (!room || !currentPlayerId) return;
+    if (room.status !== "waiting") {
+      socket.emit("name_update_error", "Names can only be edited before the game starts");
+      return;
+    }
+    if (!nextName) {
+      socket.emit("name_update_error", "Name cannot be empty");
+      return;
+    }
+    if (!isAuthorizedPlayer(room, currentPlayerId, authToken)) {
+      socket.emit("name_update_error", "Player session could not be verified");
+      return;
+    }
+
+    updatePlayerName(roomId, currentPlayerId, nextName.slice(0, 30));
+    emitRoomUpdate(roomId, room);
+    syncPlayerState(socket, room, currentPlayerId);
+    socket.emit("player_name_updated", { name: room.players[currentPlayerId].name });
   });
 
   socket.on("start_game", ({ roomId, config }) => {

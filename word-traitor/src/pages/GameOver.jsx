@@ -9,6 +9,7 @@ import {
   getStoredPlayerId,
   getStoredPlayerName,
   rememberRoom,
+  setSkipAutoReconnect,
 } from "../lib/session";
 
 function GameOver() {
@@ -58,6 +59,7 @@ function GameOver() {
 
     const handleError = () => {
       clearRememberedRoom(roomId);
+      setSkipAutoReconnect();
       navigate("/");
     };
 
@@ -168,6 +170,7 @@ function GameOver() {
                 className="mt-6 w-full border-white/10 bg-white/[0.05] text-white shadow-[0_18px_50px_-28px_rgba(255,255,255,0.2)] hover:border-white/20 hover:bg-white/[0.08] hover:shadow-[0_22px_60px_-30px_rgba(255,255,255,0.22)]"
                 onClick={() => {
                   clearRememberedRoom(roomId);
+                  setSkipAutoReconnect();
                   navigate("/");
                 }}
               >

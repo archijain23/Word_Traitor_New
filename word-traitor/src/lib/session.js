@@ -2,6 +2,7 @@ const PLAYER_ID_KEY = "word-traitor-player-id";
 const PLAYER_AUTH_TOKEN_KEY = "word-traitor-player-auth-token";
 const PLAYER_NAME_KEY = "playerName";
 const LAST_ROOM_KEY = "word-traitor-last-room";
+const SKIP_AUTO_RECONNECT_KEY = "word-traitor-skip-auto-reconnect";
 
 function createPlayerId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -72,6 +73,21 @@ export function clearRememberedRoom(roomId) {
 
 export function getRememberedRoom() {
   return localStorage.getItem(LAST_ROOM_KEY) || "";
+}
+
+export function setSkipAutoReconnect(value = true) {
+  if (value) {
+    sessionStorage.setItem(SKIP_AUTO_RECONNECT_KEY, "true");
+    return;
+  }
+
+  sessionStorage.removeItem(SKIP_AUTO_RECONNECT_KEY);
+}
+
+export function consumeSkipAutoReconnect() {
+  const shouldSkip = sessionStorage.getItem(SKIP_AUTO_RECONNECT_KEY) === "true";
+  sessionStorage.removeItem(SKIP_AUTO_RECONNECT_KEY);
+  return shouldSkip;
 }
 
 export function buildPlayerSession(nameOverride) {

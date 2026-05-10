@@ -10,6 +10,7 @@ import {
   getStoredPlayerId,
   getStoredPlayerName,
   rememberRoom,
+  setSkipAutoReconnect,
 } from "../lib/session";
 
 const WORD_ASSIGNMENT_SECONDS = 10;
@@ -242,6 +243,7 @@ function Game() {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [hint, setHint] = useState("");
   const [hints, setHints] = useState({});
+  const [hintHistory, setHintHistory] = useState([]);
   const [submittedHint, setSubmittedHint] = useState(false);
   // word-assignment countdown
   const [wordCountdown, setWordCountdown] = useState(WORD_ASSIGNMENT_SECONDS);
@@ -252,7 +254,7 @@ function Game() {
   const [voteSummary, setVoteSummary] = useState(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [newHintIds, setNewHintIds] = useState(new Set());
-  const prevHintsRef = useRef({});
+  const prevHintsRef = useRef([]);
   const resultTimersRef = useRef([]);
   const resultSequenceKeyRef = useRef(null);
   const phaseCueTimerRef = useRef(null);
@@ -385,18 +387,24 @@ function Game() {
       if (roomData.lastEliminated) setEliminatedInfo(roomData.lastEliminated);
       if (roomData.lastVoteSummary) setVoteSummary(roomData.lastVoteSummary);
       if (roomData.config?.hintTime) setHintTimeDuration(roomData.config.hintTime);
-      if (roomData.hints) {
+      if (roomData.hintHistory) {
         const prev = prevHintsRef.current;
-        const incoming = roomData.hints;
-        const fresh = Object.keys(incoming).filter((k) => !prev[k]);
+        const incoming = roomData.hintHistory;
+        const fresh = incoming
+          .filter((entry) => !prev.some((prevEntry) => prevEntry.id === entry.id))
+          .map((entry) => entry.id);
         if (fresh.length > 0) {
-          setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((k) => n.add(k)); return n; });
+          setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((id) => n.add(id)); return n; });
           playImpactCue("hint");
           setTimeout(() => {
-            setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((k) => n.delete(k)); return n; });
+            setNewHintIds((ids) => { const n = new Set(ids); fresh.forEach((id) => n.delete(id)); return n; });
           }, 600);
         }
         prevHintsRef.current = incoming;
+        setHintHistory(incoming);
+      }
+      if (roomData.hints) {
+        const incoming = roomData.hints;
         setHints(incoming);
         setSubmittedHint(Boolean(playerId && incoming[playerId]));
       }
@@ -418,15 +426,17 @@ function Game() {
       applyRoomState(state.room);
       setWord(state.wordProgress?.word || null);
       const h = state.wordProgress?.hints || {};
-      prevHintsRef.current = h;
+      const history = state.wordProgress?.hintHistory || [];
+      prevHintsRef.current = history;
       setHints(h);
+      setHintHistory(history);
       setHasVoted(Boolean(playerId && state.wordProgress?.hasVoted?.[playerId]));
       setSubmittedHint(Boolean(playerId && h[playerId]));
     };
 
     const handlePhaseChanged = (data) => {
       setPhase(data.phase);
-      if (data.hints) { prevHintsRef.current = data.hints; setHints(data.hints); }
+      if (data.hints) { setHints(data.hints); }
       if (data.phase === "hint_collection") {
         setSubmittedHint(false);
         setHint("");
@@ -434,7 +444,6 @@ function Game() {
         setVoteSummary(null);
         setResultStage("idle");
         resultSequenceKeyRef.current = null;
-        prevHintsRef.current = {};
         setHints({});
         showPhaseCue("Hint phase");
       }
@@ -470,7 +479,11 @@ function Game() {
       navigate(`/lobby/${rid}`, { state: { skipNamePrompt: true } });
     };
 
-    const handleError = () => { clearRememberedRoom(roomId); navigate("/"); };
+    const handleError = () => {
+      clearRememberedRoom(roomId);
+      setSkipAutoReconnect();
+      navigate("/");
+    };
 
     socket.on("room_updated", handleRoomUpdated);
     socket.on("STATE_SYNC", handleStateSync);
@@ -524,6 +537,9 @@ function Game() {
   const isHost = playerId === room.hostId;
   const wordProgress = ((WORD_ASSIGNMENT_SECONDS - wordCountdown) / WORD_ASSIGNMENT_SECONDS) * 100;
   const hintEntries = Object.entries(hints);
+  const hintFeedEntries = hintHistory.length > 0
+    ? hintHistory
+    : hintEntries.map(([pid, playerHint]) => ({ id: pid, playerId: pid, hint: playerHint, round: 1 }));
   const submittedCount = hintEntries.length;
   const totalActive = activePlayers.length;
   const hintTimedOut = hintCountdown <= 0 && phase === "hint_collection";
@@ -535,16 +551,16 @@ function Game() {
   // ─── Live hint feed ───────────────────────────────────────────────────────────────
   const HintFeed = ({ showWaiting = true }) => (
     <div className="space-y-2">
-      {hintEntries.length === 0 && showWaiting && (
+      {hintFeedEntries.length === 0 && showWaiting && (
         <p className="text-center text-zinc-500 text-sm py-4">Waiting for first hint...</p>
       )}
-      {hintEntries.map(([pid, playerHint]) => {
-        const player = room.players[pid];
-        const isMe = pid === playerId;
-        const isNew = newHintIds.has(pid);
+      {hintFeedEntries.map((entry) => {
+        const player = room.players[entry.playerId];
+        const isMe = entry.playerId === playerId;
+        const isNew = newHintIds.has(entry.id);
         return (
           <div
-            key={pid}
+            key={entry.id}
             className={`flex items-start gap-3 rounded-2xl border p-4 transition-all duration-300 ${
               isNew
                 ? "border-cyan-300/40 bg-cyan-400/10 scale-[1.02] shadow-[0_0_24px_rgba(34,211,238,0.18)]"
@@ -556,10 +572,15 @@ function Game() {
           >
             <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${isMe ? "bg-fuchsia-400" : "bg-cyan-400"}`} />
             <div className="min-w-0 flex-1">
-              <span className={`text-sm font-semibold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
-                {player?.name || "Unknown"}{isMe ? " (you)" : ""}
-              </span>
-              <p className="text-zinc-200 mt-0.5 text-sm break-words">&ldquo;{playerHint}&rdquo;</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-sm font-semibold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
+                  {player?.name || "Unknown"}{isMe ? " (you)" : ""}
+                </span>
+                <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-400">
+                  Round {entry.round}
+                </span>
+              </div>
+              <p className="text-zinc-200 mt-0.5 text-sm break-words">&ldquo;{entry.hint}&rdquo;</p>
             </div>
             {isNew && (
               <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-cyan-300 bg-cyan-400/15 px-2 py-0.5 rounded-full">new</span>
@@ -572,25 +593,30 @@ function Game() {
 
   const CompactHintGrid = ({ emptyLabel = "Waiting for first hint..." }) => (
     <div className="grid grid-cols-2 gap-2">
-      {hintEntries.length === 0 ? (
+      {hintFeedEntries.length === 0 ? (
         <div className="col-span-2 rounded-2xl border border-dashed border-white/12 bg-white/4 px-3 py-4 text-center text-xs text-zinc-500">
           {emptyLabel}
         </div>
       ) : (
-        hintEntries.map(([pid, playerHint]) => {
-          const player = room.players[pid];
-          const isMe = pid === playerId;
+        hintFeedEntries.map((entry) => {
+          const player = room.players[entry.playerId];
+          const isMe = entry.playerId === playerId;
           return (
             <div
-              key={`compact-${pid}`}
+              key={`compact-${entry.id}`}
               className={`rounded-2xl border px-3 py-2 ${
                 isMe
                   ? "border-fuchsia-300/25 bg-fuchsia-500/8"
                   : "border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))]"
               }`}
             >
-              <div className={`text-[11px] font-bold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
-                {player?.name || "Unknown"}{isMe ? " (you)" : ""}
+              <div className="flex items-center justify-between gap-2">
+                <div className={`text-[11px] font-bold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
+                  {player?.name || "Unknown"}{isMe ? " (you)" : ""}
+                </div>
+                <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                  R{entry.round}
+                </div>
               </div>
               <p
                 className="mt-1 text-xs leading-4 text-zinc-200"
@@ -601,7 +627,7 @@ function Game() {
                   overflow: "hidden",
                 }}
               >
-                {playerHint}
+                {entry.hint}
               </p>
             </div>
           );
@@ -770,7 +796,12 @@ function Game() {
                 )}
                 {!isHost && <p className="text-sm text-zinc-500">Waiting for the host to start a new game...</p>}
                 <button
-                  onClick={() => { socket.emit("leave_room", { roomId }); navigate("/"); }}
+                  onClick={() => {
+                    socket.emit("leave_room", { roomId });
+                    clearRememberedRoom(roomId);
+                    setSkipAutoReconnect();
+                    navigate("/");
+                  }}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm text-zinc-400 transition hover:border-white/20 hover:text-white"
                 >Leave Room</button>
               </div>

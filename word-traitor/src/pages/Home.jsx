@@ -7,6 +7,7 @@ import Modal from "../components/ui/Modal";
 import { socket } from "../lib/socket";
 import {
   buildPlayerSession,
+  consumeSkipAutoReconnect,
   getRememberedRoom,
   getStoredPlayerName,
   rememberRoom,
@@ -21,6 +22,8 @@ function Home() {
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   useEffect(() => {
+    if (consumeSkipAutoReconnect()) return;
+
     const lastRoomId = getRememberedRoom();
     const storedName = getStoredPlayerName();
 

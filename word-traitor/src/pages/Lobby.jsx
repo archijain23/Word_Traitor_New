@@ -8,9 +8,11 @@ import { emitReconnectPlayer, socket } from "../lib/socket";
 import {
   buildPlayerSession,
   clearRememberedRoom,
+  getStoredPlayerAuthToken,
   getStoredPlayerName,
   getStoredPlayerId,
   rememberRoom,
+  setSkipAutoReconnect,
   setStoredPlayerName,
 } from "../lib/session";
 
@@ -31,10 +33,16 @@ function Lobby() {
   const [difficulty, setDifficulty] = useState("Medium");
   const [use18Plus, setUse18Plus] = useState(false);
   const [anonymousVoting, setAnonymousVoting] = useState(false);
+  const [editingName, setEditingName] = useState("");
+  const [isSavingName, setIsSavingName] = useState(false);
 
   useEffect(() => {
     const applyRoomState = (roomData) => {
       setRoom(roomData);
+      const currentPlayer = roomData.players?.[playerId];
+      if (currentPlayer && !isSavingName) {
+        setEditingName(currentPlayer.name || "");
+      }
       if (roomData.config) {
         setNumTraitors(roomData.config.numTraitors ?? 1);
         setHintTime(roomData.config.hintTime ?? 30);
@@ -52,8 +60,19 @@ function Lobby() {
     const handleReconnectEvent = ({ room: syncedRoom }) => {
       if (syncedRoom?.roomId === roomId) applyRoomState(syncedRoom);
     };
+    const handlePlayerNameUpdated = ({ name: updatedName }) => {
+      setEditingName(updatedName || "");
+      setName(updatedName || "");
+      setStoredPlayerName(updatedName || "");
+      setIsSavingName(false);
+    };
+    const handleNameUpdateError = (msg) => {
+      setIsSavingName(false);
+      alert(msg);
+    };
     const handleError = (msg) => {
       clearRememberedRoom(roomId);
+      setSkipAutoReconnect();
       alert(msg);
       navigate("/");
     };
@@ -62,6 +81,8 @@ function Lobby() {
     socket.on("STATE_SYNC", handleStateSync);
     socket.on("PLAYER_RECONNECTED", handleReconnectEvent);
     socket.on("PLAYER_DISCONNECTED", handleReconnectEvent);
+    socket.on("player_name_updated", handlePlayerNameUpdated);
+    socket.on("name_update_error", handleNameUpdateError);
     socket.on("error", handleError);
 
     return () => {
@@ -69,9 +90,11 @@ function Lobby() {
       socket.off("STATE_SYNC", handleStateSync);
       socket.off("PLAYER_RECONNECTED", handleReconnectEvent);
       socket.off("PLAYER_DISCONNECTED", handleReconnectEvent);
+      socket.off("player_name_updated", handlePlayerNameUpdated);
+      socket.off("name_update_error", handleNameUpdateError);
       socket.off("error", handleError);
     };
-  }, [navigate, roomId]);
+  }, [isSavingName, navigate, playerId, roomId]);
 
   useEffect(() => {
     if (showNameModal || !name) return;
@@ -100,7 +123,25 @@ function Lobby() {
     socket.emit("leave_room", { roomId });
     sessionStorage.removeItem(`joined-room-${roomId}`);
     clearRememberedRoom(roomId);
+    setSkipAutoReconnect();
     navigate("/");
+  };
+
+  const handleSaveName = () => {
+    const nextName = editingName.trim();
+    const authToken = getStoredPlayerAuthToken();
+    if (!nextName) {
+      alert("Enter your name");
+      return;
+    }
+    if (!room || room.status !== "waiting" || !authToken) return;
+    if (room.players?.[playerId]?.name === nextName) {
+      setEditingName(nextName);
+      return;
+    }
+
+    setIsSavingName(true);
+    socket.emit("update_player_name", { roomId, name: nextName, authToken });
   };
 
   if (!room) {
@@ -127,14 +168,6 @@ function Lobby() {
 
   const isHost = playerId === room.hostId;
   const isWaiting = room.status === "waiting";
-
-  const configRows = [
-    { label: "Traitors", value: room.config?.numTraitors ?? 1 },
-    { label: "Hint Time", value: `${room.config?.hintTime ?? 30}s` },
-    { label: "Difficulty", value: room.config?.difficulty ?? "Medium" },
-    { label: "18+ Words", value: room.config?.use18Plus ? "On" : "Off" },
-    { label: "Anonymous Voting", value: room.config?.anonymousVoting ? "On" : "Off" },
-  ];
 
   return (
     <Layout>
@@ -204,6 +237,7 @@ function Lobby() {
                     <option value={15}>15</option>
                     <option value={30}>30</option>
                     <option value={45}>45</option>
+                    <option value={60}>60</option>
                   </select>
                 </div>
 
@@ -241,20 +275,18 @@ function Lobby() {
               </div>
             </Card>
           ) : (
-            /* PLAYER: read-only game info */
+            /* PLAYER: waiting panel only */
             <Card className="p-5 sm:p-8">
               <div className="mb-8">
-                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Info</p>
-                <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Room settings</h2>
-                <p className="text-zinc-400 text-sm mt-2">Configured by the host — settings are locked until the game starts.</p>
+                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Waiting Room</p>
+                <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Waiting for the host</h2>
+                <p className="mt-2 text-sm text-zinc-400">
+                  Only the host can view and adjust game settings. You&apos;ll join automatically when the round begins.
+                </p>
               </div>
-              <div className="grid gap-3 mb-6">
-                {configRows.map(({ label, value }) => (
-                  <div key={label} className="flex flex-col gap-1 rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-sm text-zinc-400">{label}</span>
-                    <span className="text-sm font-semibold text-white">{value}</span>
-                  </div>
-                ))}
+              <div className="mb-6 rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-5">
+                <p className="text-sm font-semibold text-white">You can rename yourself from the player list until the game starts.</p>
+                <p className="mt-2 text-sm text-zinc-400">Once the host launches the game, names and settings are locked for the round.</p>
               </div>
               <Button
                 onClick={handleBackToHome}
@@ -283,14 +315,38 @@ function Lobby() {
                 {Object.values(room.players).map((p) => (
                   <div key={p.id} className="flex flex-col gap-3 rounded-3xl border border-white/6 bg-[linear-gradient(135deg,rgba(17,24,39,0.9),rgba(26,16,44,0.82))] p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="break-words font-semibold text-white">{p.name}</p>
+                      {p.id === playerId && room.status === "waiting" ? (
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                            maxLength={30}
+                            className="w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 px-3 py-2 text-sm font-semibold text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 sm:max-w-[220px]"
+                          />
+                          <Button
+                            onClick={handleSaveName}
+                            className="px-4 py-2 text-xs sm:text-sm"
+                            disabled={!editingName.trim() || editingName.trim() === p.name}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="break-words font-semibold text-white">{p.name}</p>
+                      )}
                       <p className="text-xs text-zinc-500">
-                        {p.id === room.hostId ? "Host" : "Player"} • {p.online ? "Online" : "Offline"}
+                        {p.id === room.hostId ? "Host" : "Player"} • {p.online ? "Online" : "Offline"}{p.id === playerId && room.status === "waiting" ? " • You can edit this name" : ""}
                       </p>
                     </div>
-                    {p.id === room.hostId && (
-                      <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">HOST</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {p.id === playerId && room.status === "waiting" && (
+                        <span className="rounded-full bg-fuchsia-500/12 px-3 py-1 text-xs font-semibold text-fuchsia-200">YOU</span>
+                      )}
+                      {p.id === room.hostId && (
+                        <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">HOST</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

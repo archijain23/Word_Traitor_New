@@ -23,6 +23,8 @@ function createRoom(roomId, hostId, name, socketId, config = {}) {
     hasVoted: {},
     traitorId: null,
     hints: {},
+    hintHistory: [],
+    currentHintRound: 1,
     currentPhase: "waiting",
     lastEliminated: null,
     messages: [],
@@ -99,6 +101,13 @@ function setPlayerAuthToken(roomId, playerId, authToken) {
   return room.players[playerId];
 }
 
+function updatePlayerName(roomId, playerId, name) {
+  const room = rooms[roomId];
+  if (!room || !room.players[playerId]) return null;
+  room.players[playerId] = { ...room.players[playerId], name };
+  return room.players[playerId];
+}
+
 function addVote(roomId, voterId, targetId) {
   const room = rooms[roomId];
   if (!room) return;
@@ -113,6 +122,12 @@ function addHint(roomId, playerId, hint) {
   const room = rooms[roomId];
   if (!room) return;
   room.hints[playerId] = hint;
+  room.hintHistory.push({
+    id: `r${room.currentHintRound}-${playerId}-${room.hintHistory.length + 1}`,
+    playerId,
+    hint,
+    round: room.currentHintRound,
+  });
 }
 
 function resetRound(roomId) {
@@ -139,6 +154,8 @@ function resetGame(roomId) {
   room.voteSelections = {};
   room.hasVoted = {};
   room.hints = {};
+  room.hintHistory = [];
+  room.currentHintRound = 1;
   room.traitorId = null;
   room.traitorIds = [];
   room.revealedRoles = null;
@@ -159,6 +176,7 @@ module.exports = {
   addHint,
   markPlayerEliminated,
   setPlayerAuthToken,
+  updatePlayerName,
   resetRound,
   resetGame,
 };
