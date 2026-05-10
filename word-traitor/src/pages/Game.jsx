@@ -570,6 +570,68 @@ function Game() {
     </div>
   );
 
+  const CompactHintGrid = ({ emptyLabel = "Waiting for first hint..." }) => (
+    <div className="grid grid-cols-2 gap-2">
+      {hintEntries.length === 0 ? (
+        <div className="col-span-2 rounded-2xl border border-dashed border-white/12 bg-white/4 px-3 py-4 text-center text-xs text-zinc-500">
+          {emptyLabel}
+        </div>
+      ) : (
+        hintEntries.map(([pid, playerHint]) => {
+          const player = room.players[pid];
+          const isMe = pid === playerId;
+          return (
+            <div
+              key={`compact-${pid}`}
+              className={`rounded-2xl border px-3 py-2 ${
+                isMe
+                  ? "border-fuchsia-300/25 bg-fuchsia-500/8"
+                  : "border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))]"
+              }`}
+            >
+              <div className={`text-[11px] font-bold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
+                {player?.name || "Unknown"}{isMe ? " (you)" : ""}
+              </div>
+              <p
+                className="mt-1 text-xs leading-4 text-zinc-200"
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+              >
+                {playerHint}
+              </p>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
+  const WordReminderCard = () => {
+    if (isSpectator || !word) return null;
+
+    return (
+      <Card className="p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/75 sm:text-xs sm:tracking-[0.3em]">
+              Your Word
+            </p>
+            <div className="mt-2 break-words text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 sm:text-3xl">
+              {word}
+            </div>
+          </div>
+          <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:text-xs">
+            Keep this private
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
   return (
     <>
       <style>{`
@@ -603,7 +665,7 @@ function Game() {
         }
       `}</style>
 
-      <Layout>
+      <Layout mainClassName="sm:px-6 sm:py-8" headerBadge="Live Round" hideFooter>
         {impactFlash && (
           <div
             className={`pointer-events-none fixed inset-0 z-40 transition-opacity duration-500 ${
@@ -637,11 +699,11 @@ function Game() {
           />
         )}
 
-        <div className="space-y-6 overflow-x-hidden">
+        <div className="space-y-3 overflow-x-hidden sm:space-y-6">
 
           {/* Header */}
-          <div className="rounded-[24px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-4 sm:rounded-[28px] sm:p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)]">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="rounded-[24px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)] sm:rounded-[28px] sm:p-6">
+            <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80 sm:text-xs sm:tracking-[0.35em]">Live Round</p>
                 <h1 className="mt-3 text-xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
@@ -652,21 +714,34 @@ function Game() {
                 <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
               </div>
             </div>
+            <div className="sm:hidden">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-200/75">Room</p>
+                  <h1 className="mt-1 break-all text-lg font-black text-cyan-200">{room.roomId}</h1>
+                </div>
+                <div className="rounded-2xl border border-fuchsia-300/18 bg-fuchsia-500/8 px-3 py-2 text-right">
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-fuchsia-200/70">Phase</div>
+                  <div className="mt-1 text-xs font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-zinc-300/80">Everything for this phase is kept on this screen so players don&apos;t need to hunt by scrolling.</p>
+            </div>
             {isSpectator && (
-              <div className="mt-4 rounded-[24px] border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-100">
+              <div className="mt-4 rounded-[24px] border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 sm:px-5 sm:py-4">
                 You were voted out. You are now spectating.
               </div>
             )}
           </div>
 
           {/* Room ID */}
-          <Card className="p-5 sm:p-6">
+          <Card className="hidden p-5 sm:block sm:p-6">
             <h2 className="break-all text-xl font-bold text-cyan-300 drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]">Room: {room.roomId}</h2>
           </Card>
 
           {/* 🏆 GAME OVER */}
           {phase === "game_over" && (
-            <Card className="p-5 text-center sm:p-8">
+            <Card className="p-4 text-center sm:p-8">
               <div className="text-5xl mb-4">{room.winner === "civilians" ? "🎉" : "🕵️"}</div>
               <h2 className="text-2xl font-black text-white mb-2">
                 {room.winner === "civilians" ? "Civilians Win!" : "Traitor Wins!"}
@@ -762,9 +837,10 @@ function Game() {
 
           {/* 💡 HINT COLLECTION */}
           {phase === "hint_collection" && (
-            <div className="space-y-4">
+            <div className="space-y-4 sm:space-y-4">
+              <WordReminderCard />
               {/* Input card — no duplicate ring here, timer bar is always visible above */}
-              <Card className="p-5 sm:p-6">
+              <Card className="p-4 sm:p-6">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-lg font-bold text-white">Give a Hint 💡</h2>
                   <span className="w-fit text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
@@ -772,7 +848,7 @@ function Game() {
                   </span>
                 </div>
 
-                <p className="text-sm text-zinc-400 mb-4">Say something related to your word. Don&apos;t give it away!</p>
+                <p className="mb-4 text-xs text-zinc-400 sm:text-sm">Say something related to your word. Don&apos;t give it away!</p>
 
                 {isSpectator ? (
                   <p className="text-center text-amber-300">Spectators cannot submit hints.</p>
@@ -792,7 +868,7 @@ function Game() {
                         }
                       }}
                       placeholder="Enter your hint..."
-                      className="mb-3 w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 p-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25"
+                      className="mb-3 w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 p-3.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 sm:p-4 sm:text-base"
                       maxLength={100}
                       autoFocus
                     />
@@ -805,7 +881,7 @@ function Game() {
                         socket.emit("submit_hint", { roomId, hint: hint.trim() });
                         setSubmittedHint(true);
                       }}
-                      className="w-full"
+                      className="w-full py-3 text-sm sm:text-base"
                       disabled={!hint.trim()}
                     >Submit Hint</Button>
                   </>
@@ -823,7 +899,7 @@ function Game() {
               </Card>
 
               {/* Live hint feed card */}
-              <Card className="p-5 sm:p-6">
+              <Card className="hidden p-5 sm:block sm:p-6">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="flex items-center gap-2 text-base font-bold text-white min-w-0">
                     <span className="relative flex h-2 w-2">
@@ -855,71 +931,104 @@ function Game() {
                 </div>
                 <HintFeed showWaiting />
               </Card>
+
+              <Card className="p-4 sm:hidden">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-white">Live Hints</h3>
+                  <span className="text-[11px] text-zinc-500">
+                    {totalActive - submittedCount > 0 ? `${totalActive - submittedCount} left` : "All in"}
+                  </span>
+                </div>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {activePlayers.map((p) => {
+                    const done = Boolean(hints[p.id]);
+                    return (
+                      <div
+                        key={`mobile-status-${p.id}`}
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                          done ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-white/10 bg-white/5 text-zinc-500"
+                        }`}
+                      >
+                        {p.name}{p.id === playerId ? " (you)" : ""}
+                      </div>
+                    );
+                  })}
+                </div>
+                <CompactHintGrid />
+              </Card>
             </div>
           )}
 
           {/* 🗾 VOTING */}
           {phase === "voting" && (
-            <Card className="p-5 sm:p-8">
-              <h2 className="text-lg font-semibold mb-1">All Hints 🗾</h2>
-              <p className="text-sm text-zinc-400 mb-4">Read everyone&apos;s hints and vote for the traitor.</p>
-              <HintFeed showWaiting={false} />
-              {isSpectator ? (
-                <p className="text-center text-amber-300 mt-6">Spectators cannot vote.</p>
-              ) : !hasVoted ? (
-                <>
-                  <div className="mb-3 mt-6 border-t border-white/8 pt-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-200/75">Vote</div>
-                    <p className="mt-2 text-sm text-zinc-400">Choose the player you think is the traitor.</p>
-                  </div>
-                  <div className="space-y-2">
-                    {activePlayers.filter((p) => p.id !== playerId).map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => setSelectedPlayer(p.id)}
-                        className={`flex flex-col gap-2 rounded-2xl border p-4 transition sm:flex-row sm:items-center sm:justify-between ${
-                          selectedPlayer === p.id
-                            ? "border-rose-300/45 bg-rose-400/14 shadow-[0_0_28px_rgba(251,113,133,0.2)]"
-                            : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
-                        }`}
-                      >
-                        <span className="font-semibold text-white">{p.name}</span>
-                        <span className={`text-xs font-black uppercase tracking-[0.24em] ${
-                          selectedPlayer === p.id ? "text-rose-200" : "text-zinc-500"
-                        }`}>
-                          {selectedPlayer === p.id ? "Targeted" : "Tap to accuse"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    className="mt-4 w-full"
-                    onClick={() => {
-                      if (!selectedPlayer) return;
-                      primeAudioContext();
-                      playImpactCue("vote");
-                      pulseVibration(24);
-                      socket.emit("vote_player", { roomId, targetId: selectedPlayer });
-                      setHasVoted(true);
-                      setSelectedPlayer(null);
-                    }}
-                    disabled={!selectedPlayer}
-                  >Submit Vote</Button>
-                </>
-              ) : (
-                <p className="text-center text-green-400 mt-6">✅ Vote submitted! Waiting for others...</p>
-              )}
-            </Card>
+            <div className="space-y-4">
+              <WordReminderCard />
+              <Card className="p-4 sm:p-8">
+                <h2 className="mb-1 text-lg font-semibold">All Hints 🗾</h2>
+                <p className="mb-4 text-xs text-zinc-400 sm:text-sm">Read everyone&apos;s hints and vote for the traitor.</p>
+                <div className="hidden sm:block">
+                  <HintFeed showWaiting={false} />
+                </div>
+                <div className="sm:hidden">
+                  <CompactHintGrid emptyLabel="Waiting for hints..." />
+                </div>
+                {isSpectator ? (
+                  <p className="text-center text-amber-300 mt-6">Spectators cannot vote.</p>
+                ) : !hasVoted ? (
+                  <>
+                    <div className="mb-3 mt-4 border-t border-white/8 pt-4 sm:mt-6">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-200/75">Vote</div>
+                      <p className="mt-2 text-xs text-zinc-400 sm:text-sm">Choose the player you think is the traitor.</p>
+                    </div>
+                    <div className="grid gap-2 sm:space-y-2">
+                      {activePlayers.filter((p) => p.id !== playerId).map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => setSelectedPlayer(p.id)}
+                          className={`flex flex-col gap-2 rounded-2xl border p-3 transition sm:p-4 sm:flex-row sm:items-center sm:justify-between ${
+                            selectedPlayer === p.id
+                              ? "border-rose-300/45 bg-rose-400/14 shadow-[0_0_28px_rgba(251,113,133,0.2)]"
+                              : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
+                          }`}
+                        >
+                          <span className="text-sm font-semibold text-white sm:text-base">{p.name}</span>
+                          <span className={`text-[10px] font-black uppercase tracking-[0.18em] sm:text-xs sm:tracking-[0.24em] ${
+                            selectedPlayer === p.id ? "text-rose-200" : "text-zinc-500"
+                          }`}>
+                            {selectedPlayer === p.id ? "Targeted" : "Tap to accuse"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      className="mt-4 w-full py-3 text-sm sm:text-base"
+                      onClick={() => {
+                        if (!selectedPlayer) return;
+                        primeAudioContext();
+                        playImpactCue("vote");
+                        pulseVibration(24);
+                        socket.emit("vote_player", { roomId, targetId: selectedPlayer });
+                        setHasVoted(true);
+                        setSelectedPlayer(null);
+                      }}
+                      disabled={!selectedPlayer}
+                    >Submit Vote</Button>
+                  </>
+                ) : (
+                  <p className="text-center text-green-400 mt-6">✅ Vote submitted! Waiting for others...</p>
+                )}
+              </Card>
+            </div>
           )}
 
           {/* 🧾 ROUND RESULT */}
           {phase === "round_result" && eliminatedInfo && (
-            <Card className="p-5 sm:p-8">
+            <Card className="p-4 sm:p-8">
               <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-200/80">Round result</p>
                   <h2 className="mt-2 text-2xl font-black text-white">The votes are in.</h2>
-                  <p className="mt-2 text-sm text-zinc-400">
+                  <p className="mt-2 text-xs text-zinc-400 sm:text-sm">
                     {voteSummary?.isAnonymous
                       ? "Vote totals are revealed, but individual ballots stayed anonymous."
                       : "Every ballot is on the table."}
@@ -935,7 +1044,7 @@ function Game() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-[24px] border border-white/10 bg-slate-950/78 p-5">
+                <div className="rounded-[24px] border border-white/10 bg-slate-950/78 p-4 sm:p-5">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <h3 className="text-sm font-bold uppercase tracking-[0.24em] text-zinc-300">Vote Reveal</h3>
                     <span className="text-xs text-zinc-500">{voteLines.length} ballot{voteLines.length === 1 ? "" : "s"}</span>
@@ -946,7 +1055,7 @@ function Game() {
                       {voteLines.map(({ voterId, targetId }, index) => (
                         <div
                           key={`${voterId}-${targetId}`}
-                          className="flex flex-col gap-2 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                          className="hidden flex-col gap-2 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 sm:flex sm:flex-row sm:items-center sm:justify-between"
                           style={{
                             animation: "voteBeam 0.3s ease-out both",
                             animationDelay: `${index * 90}ms`,
@@ -960,6 +1069,18 @@ function Game() {
                           <span className="min-w-0 truncate text-right font-semibold text-rose-300">
                             {room.players[targetId]?.name || "Unknown"}
                           </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!voteSummary?.isAnonymous && voteLines.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2 sm:hidden">
+                      {voteLines.map(({ voterId, targetId }) => (
+                        <div key={`mobile-vote-${voterId}-${targetId}`} className="rounded-2xl border border-white/8 bg-white/4 px-3 py-2">
+                          <div className="text-[11px] font-bold text-white">{room.players[voterId]?.name || "Unknown"}</div>
+                          <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-rose-200/75">voted</div>
+                          <div className="mt-1 text-xs font-semibold text-rose-300">{room.players[targetId]?.name || "Unknown"}</div>
                         </div>
                       ))}
                     </div>
@@ -979,7 +1100,7 @@ function Game() {
                       return (
                         <div
                           key={targetId}
-                          className={`rounded-2xl border p-4 ${
+                          className={`rounded-2xl border p-3 sm:p-4 ${
                             isEliminatedTarget
                               ? "border-rose-300/30 bg-rose-500/10"
                               : "border-white/8 bg-white/4"
@@ -1006,7 +1127,7 @@ function Game() {
                 </div>
 
                 <div
-                  className={`relative overflow-hidden rounded-[24px] border p-5 ${
+                  className={`relative overflow-hidden rounded-[24px] border p-4 sm:p-5 ${
                     eliminatedInfo.wasTraitor
                       ? "border-emerald-300/24 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.18),transparent_55%),linear-gradient(135deg,rgba(6,78,59,0.82),rgba(10,10,18,0.96))]"
                       : "border-rose-300/24 bg-[radial-gradient(circle_at_top,rgba(251,113,133,0.18),transparent_55%),linear-gradient(135deg,rgba(76,5,25,0.82),rgba(10,10,18,0.96))]"
@@ -1018,7 +1139,7 @@ function Game() {
                   <div className="relative z-10">
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/65">Eliminated</p>
                     <h3 className="mt-3 break-words text-2xl font-black text-white sm:text-3xl">{eliminatedPlayerName}</h3>
-                    <p className="mt-3 text-sm text-white/80">
+                    <p className="mt-3 text-xs text-white/80 sm:text-sm">
                       {eliminatedInfo.wasTraitor
                         ? "The bluff cracked. Citizens found the traitor."
                         : "Wrong call. The real traitor is still hidden in the room."}
@@ -1051,7 +1172,7 @@ function Game() {
 
               {!eliminatedInfo.wasTraitor && (
                 <>
-                  <p className="text-sm text-zinc-500 mt-3">
+                  <p className="mt-3 text-xs text-zinc-500 sm:text-sm">
                     {isSpectator
                       ? "Active players will continue with a new hint phase while you spectate."
                       : "Launch the next hint phase when everyone has seen the result."}

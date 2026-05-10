@@ -1,6 +1,11 @@
 import React from "react";
 
-function Layout({ children }) {
+function Layout({
+  children,
+  mainClassName = "",
+  headerBadge = "Live Lobby",
+  hideFooter = false,
+}) {
   return (
     <div className="relative min-h-screen overflow-x-hidden text-white">
       <div className="pointer-events-none absolute inset-0">
@@ -10,7 +15,7 @@ function Layout({ children }) {
       </div>
 
       <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/60 backdrop-blur-2xl">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4">
           <div className="min-w-0">
             <h1 className="text-sm font-black tracking-[0.14em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-fuchsia-400 drop-shadow-[0_0_22px_rgba(56,189,248,0.45)] sm:text-xl sm:tracking-[0.22em]">
               WORD TRAITOR
@@ -21,21 +26,23 @@ function Layout({ children }) {
           </div>
 
           <span className="max-w-full self-stretch rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200 shadow-[0_0_30px_rgba(34,211,238,0.18)] sm:w-auto sm:self-auto sm:text-xs sm:tracking-[0.28em]">
-            Live Lobby
+            {headerBadge}
           </span>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 px-3 py-5 sm:px-6 sm:py-8">
+      <main className={`relative z-10 mx-auto flex w-full max-w-6xl flex-1 px-3 py-3 sm:px-6 sm:py-8 ${mainClassName}`}>
         <div className="w-full">{children}</div>
       </main>
 
-      <footer className="relative z-10 border-t border-white/10 bg-slate-950/40">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-4 text-center text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:text-left">
-          <span></span>
-          <span className="text-cyan-200/70"></span>
-        </div>
-      </footer>
+      {!hideFooter && (
+        <footer className="relative z-10 border-t border-white/10 bg-slate-950/40">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-4 text-center text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:text-left">
+            <span></span>
+            <span className="text-cyan-200/70"></span>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
