@@ -9,6 +9,7 @@ const {
   markPlayerEliminated,
   setPlayerAuthToken,
   updatePlayerName,
+  setPlayerReadyState,
   resetRound,
   resetGame,
 } = require("../store/roomStore");
@@ -46,6 +47,7 @@ module.exports = (io, socket) => {
           id: p.id,
           name: p.name,
           online: Boolean(p.online),
+          isReady: Boolean(p.isReady),
           isEliminated: Boolean(p.isEliminated),
           lastSeen: p.lastSeen || null,
         },
@@ -79,6 +81,10 @@ module.exports = (io, socket) => {
     const p = room.players[playerId];
     return Boolean(p && p.authToken === authToken);
   };
+
+  const areAllPlayersReady = (room) =>
+    Object.values(room.players).length >= 2 &&
+    Object.values(room.players).every((player) => player.isReady === true);
 
   const normalizeDifficulty = (difficulty) => {
     if (difficulty === "Easy" || difficulty === "Hard") return difficulty;
@@ -187,6 +193,31 @@ module.exports = (io, socket) => {
 
   const syncPlayerState = (targetSocket, room, playerId) => {
     targetSocket.emit("STATE_SYNC", buildStateSync(room, playerId));
+  };
+
+  const returnRoomToLobby = (roomId, reason = "host_ended_game") => {
+    const room = getRoom(roomId);
+    if (!room) return;
+    clearHintTimer(roomId);
+    resetGame(roomId);
+    emitRoomUpdate(roomId, room);
+    io.to(roomId).emit("return_to_lobby", { roomId, reason });
+  };
+
+  const ejectPlayerFromRoom = (roomId, targetPlayerId, reason = "removed_by_host") => {
+    const room = getRoom(roomId);
+    const targetPlayer = room?.players?.[targetPlayerId];
+    if (!room || !targetPlayer) return false;
+
+    const targetSocketId = targetPlayer.socketId;
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("removed_from_room", { roomId, reason });
+      const targetSocket = io.sockets.sockets.get(targetSocketId);
+      targetSocket?.leave(roomId);
+    }
+
+    removePlayer(roomId, targetPlayerId);
+    return true;
   };
 
   const attachToRoom = (roomId, playerId, socketId, name, authToken) => {
@@ -440,10 +471,39 @@ module.exports = (io, socket) => {
     socket.emit("player_name_updated", { name: room.players[currentPlayerId].name });
   });
 
+  socket.on("set_ready_state", ({ roomId, isReady, authToken }) => {
+    const room = getRoom(roomId);
+    if (!room || !currentPlayerId) return;
+    if (room.status !== "waiting") {
+      socket.emit("error", "Ready state can only be changed before the game starts");
+      return;
+    }
+    if (!isAuthorizedPlayer(room, currentPlayerId, authToken)) {
+      socket.emit("error", "Player session could not be verified");
+      return;
+    }
+    if (room.players[currentPlayerId]?.isReady) {
+      socket.emit("error", "You are already locked in as ready");
+      return;
+    }
+    if (isReady !== true) {
+      socket.emit("error", "Ready can only be turned on");
+      return;
+    }
+
+    setPlayerReadyState(roomId, currentPlayerId, true);
+    emitRoomUpdate(roomId, room);
+    syncPlayerState(socket, room, currentPlayerId);
+  });
+
   socket.on("start_game", ({ roomId, config }) => {
     const room = getRoom(roomId);
     if (!room) return;
     if (currentPlayerId !== room.hostId) { socket.emit("error", "Only the host can start the game"); return; }
+    if (!areAllPlayersReady(room)) {
+      socket.emit("error", "Every player must be ready before the game can start");
+      return;
+    }
     if (config) {
       room.config = {
         numTraitors:     config.numTraitors     ?? room.config.numTraitors     ?? 1,
@@ -510,10 +570,67 @@ module.exports = (io, socket) => {
     if (!room) return;
     if (currentPlayerId !== room.hostId) { socket.emit("error", "Only the host can start a new game"); return; }
     if (room.status !== "game_over") return;
-    clearHintTimer(roomId);
-    resetGame(roomId);
-    emitRoomUpdate(roomId, room);
-    io.to(roomId).emit("return_to_lobby", { roomId });
+    returnRoomToLobby(roomId, "play_again");
+  });
+
+  socket.on("host_end_game", ({ roomId }) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+    if (currentPlayerId !== room.hostId) {
+      socket.emit("error", "Only the host can end the game");
+      return;
+    }
+    returnRoomToLobby(roomId, "host_ended_game");
+  });
+
+  socket.on("host_remove_player", ({ roomId, targetPlayerId }) => {
+    const room = getRoom(roomId);
+    if (!room) return;
+    if (currentPlayerId !== room.hostId) {
+      socket.emit("error", "Only the host can remove players");
+      return;
+    }
+    if (!targetPlayerId || targetPlayerId === room.hostId) {
+      socket.emit("error", "The host cannot be removed");
+      return;
+    }
+    const targetPlayer = room.players[targetPlayerId];
+    if (!targetPlayer) return;
+
+    const removedActiveTraitor =
+      room.status === "playing" &&
+      !targetPlayer.isEliminated &&
+      room.traitorIds.includes(targetPlayerId);
+
+    const removed = ejectPlayerFromRoom(roomId, targetPlayerId);
+    if (!removed) return;
+
+    const updatedRoom = getRoom(roomId);
+    if (!updatedRoom) return;
+
+    emitRoomUpdate(roomId, updatedRoom);
+
+    if (removedActiveTraitor) {
+      returnRoomToLobby(roomId, "traitor_removed");
+      return;
+    }
+
+    if (updatedRoom.status === "playing" && getActivePlayers(updatedRoom).length < 2) {
+      returnRoomToLobby(roomId, "not_enough_players");
+      return;
+    }
+
+    if (updatedRoom.currentPhase === "hint_collection") {
+      endHintCollection(roomId);
+      return;
+    }
+
+    if (
+      updatedRoom.currentPhase === "voting" &&
+      Object.keys(updatedRoom.hasVoted || {}).length >= getActivePlayers(updatedRoom).length
+    ) {
+      endVoting(roomId);
+    }
   });
 
   socket.on("disconnect", () => {

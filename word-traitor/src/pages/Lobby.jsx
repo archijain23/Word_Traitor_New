@@ -21,6 +21,7 @@ function Lobby() {
   const navigate = useNavigate();
   const location = useLocation();
   const playerId = getStoredPlayerId();
+  const authToken = getStoredPlayerAuthToken();
 
   const storedName = getStoredPlayerName();
   const hasJoinedThisRoom = sessionStorage.getItem(`joined-room-${roomId}`) === "true";
@@ -168,22 +169,30 @@ function Lobby() {
 
   const isHost = playerId === room.hostId;
   const isWaiting = room.status === "waiting";
+  const players = Object.values(room.players);
+  const readyCount = players.filter((p) => p.isReady).length;
+  const allPlayersReady = players.length >= 2 && players.every((p) => p.isReady);
+  const me = room.players[playerId];
+  const inviteLink = `${window.location.origin}/lobby/${room.roomId}`;
+
+  const handleReadyUp = () => {
+    if (!authToken || !isWaiting || !me || me.isReady) return;
+    socket.emit("set_ready_state", {
+      roomId,
+      isReady: true,
+      authToken,
+    });
+  };
 
   return (
     <Layout>
       <div className="space-y-6">
-
-        {/* Hero header */}
         <div className="rounded-[24px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,16,38,0.94),rgba(21,12,44,0.88))] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_28px_90px_-38px_rgba(34,211,238,0.38)] sm:rounded-[28px] sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200/80 sm:text-xs sm:tracking-[0.35em]">Room Control</p>
               <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl">Build your glowing trap</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">
-                {isHost
-                  ? "Tune the room, invite the crew, and launch the round when everyone is in."
-                  : "Sit tight — the host is setting things up. You'll jump in when the game starts."}
-              </p>
+              <p className="mt-3 text-sm text-zinc-300/80">{readyCount} / {players.length} ready</p>
             </div>
             <div className="w-full rounded-[20px] border border-fuchsia-300/18 bg-fuchsia-400/8 px-4 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)] lg:w-auto">
               <div className="text-[10px] uppercase tracking-[0.18em] text-fuchsia-200/75 sm:text-[11px] sm:tracking-[0.32em]">Share Code</div>
@@ -192,20 +201,13 @@ function Lobby() {
           </div>
         </div>
 
-        {/* Main grid */}
         <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr]">
-
-          {/* LEFT COLUMN */}
           {isHost ? (
-            /* HOST: full settings panel */
             <Card className="p-5 sm:p-8">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
+              <div className="mb-6">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Settings</p>
                   <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Configure your lobby</h2>
-                </div>
-                <div className="w-full rounded-2xl border border-cyan-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300 sm:w-auto">
-                  Room Code: <span className="text-cyan-300">{room.roomId}</span>
                 </div>
               </div>
 
@@ -213,14 +215,14 @@ function Lobby() {
                 onClick={handleBackToHome}
                 className="mb-5 w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
               >
-                Back To Home
+                Leave Room
               </Button>
 
-              <div className="grid gap-5">
+              <div className="grid gap-4">
                 <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">No. of Traitors</p>
-                    <p className="text-white font-semibold">One or more secret opponents</p>
+                    <p className="text-white font-semibold">Traitors</p>
                   </div>
                   <select value={numTraitors} onChange={(e) => setNumTraitors(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
                     <option value={1}>1</option>
@@ -231,7 +233,7 @@ function Lobby() {
                 <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">Hint Drop Time (sec)</p>
-                    <p className="text-white font-semibold">How long players have to drop hints</p>
+                    <p className="text-white font-semibold">Hint timer</p>
                   </div>
                   <select value={hintTime} onChange={(e) => setHintTime(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
                     <option value={15}>15</option>
@@ -244,7 +246,7 @@ function Lobby() {
                 <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">Word Difficulty</p>
-                    <p className="text-white font-semibold">Choose the word difficulty level</p>
+                    <p className="text-white font-semibold">Difficulty</p>
                   </div>
                   <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
                     <option value="Easy">Easy</option>
@@ -256,7 +258,7 @@ function Lobby() {
                 <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">18+ Words</p>
-                    <p className="text-white font-semibold">Enable mature word set</p>
+                    <p className="text-white font-semibold">Adult set</p>
                   </div>
                   <button type="button" onClick={() => setUse18Plus((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${use18Plus ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
                     {use18Plus ? "On" : "Off"}
@@ -266,7 +268,7 @@ function Lobby() {
                 <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <div>
                     <p className="text-sm text-zinc-400">Anonymous Voting</p>
-                    <p className="text-white font-semibold">Hide voter names during results</p>
+                    <p className="text-white font-semibold">Hide voter names</p>
                   </div>
                   <button type="button" onClick={() => setAnonymousVoting((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${anonymousVoting ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
                     {anonymousVoting ? "On" : "Off"}
@@ -275,19 +277,24 @@ function Lobby() {
               </div>
             </Card>
           ) : (
-            /* PLAYER: waiting panel only */
             <Card className="p-5 sm:p-8">
-              <div className="mb-8">
+              <div className="mb-6">
                 <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Waiting Room</p>
                 <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Waiting for the host</h2>
-                <p className="mt-2 text-sm text-zinc-400">
-                  Only the host can view and adjust game settings. You&apos;ll join automatically when the round begins.
-                </p>
+                <p className="mt-2 text-sm text-zinc-400">Mark ready when you&apos;re set.</p>
               </div>
-              <div className="mb-6 rounded-3xl border border-white/6 bg-slate-950/80 px-5 py-5">
-                <p className="text-sm font-semibold text-white">You can rename yourself from the player list until the game starts.</p>
-                <p className="mt-2 text-sm text-zinc-400">Once the host launches the game, names and settings are locked for the round.</p>
-              </div>
+              {me?.isReady ? (
+                <div className="mb-4 rounded-2xl border border-emerald-300/18 bg-emerald-500/12 px-4 py-3 text-center text-sm font-semibold text-emerald-100">
+                  Ready locked
+                </div>
+              ) : (
+                <Button
+                  onClick={handleReadyUp}
+                  className="mb-4 w-full"
+                >
+                  I&apos;m Ready
+                </Button>
+              )}
               <Button
                 onClick={handleBackToHome}
                 className="w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
@@ -297,55 +304,73 @@ function Lobby() {
             </Card>
           )}
 
-          {/* RIGHT COLUMN: player list + invite */}
           <div className="space-y-6">
             <Card className="border border-fuchsia-300/14 bg-slate-950/78 p-5 sm:p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-fuchsia-300 font-semibold">
-                    Players ({Object.values(room.players).length})
-                  </p>
-                  <h3 className="text-2xl font-bold text-white">Lobby</h3>
+                  <p className="text-sm uppercase tracking-[0.3em] text-fuchsia-300 font-semibold">Players</p>
+                  <h3 className="text-2xl font-bold text-white">{players.length} in room</h3>
                 </div>
-                <div className="w-full rounded-2xl border border-fuchsia-300/15 bg-slate-950/85 px-4 py-3 text-sm text-zinc-300 sm:w-auto">
-                  <span className="font-semibold text-cyan-300">Host:</span> {room.players[room.hostId]?.name || "Unknown"}
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-300">
+                  {readyCount} / {players.length} ready
                 </div>
               </div>
               <div className="space-y-3">
-                {Object.values(room.players).map((p) => (
-                  <div key={p.id} className="flex flex-col gap-3 rounded-3xl border border-white/6 bg-[linear-gradient(135deg,rgba(17,24,39,0.9),rgba(26,16,44,0.82))] p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      {p.id === playerId && room.status === "waiting" ? (
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <input
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
-                            maxLength={30}
-                            className="w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 px-3 py-2 text-sm font-semibold text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 sm:max-w-[220px]"
-                          />
-                          <Button
-                            onClick={handleSaveName}
-                            className="px-4 py-2 text-xs sm:text-sm"
-                            disabled={!editingName.trim() || editingName.trim() === p.name}
-                          >
-                            Save
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="break-words font-semibold text-white">{p.name}</p>
-                      )}
-                      <p className="text-xs text-zinc-500">
-                        {p.id === room.hostId ? "Host" : "Player"} • {p.online ? "Online" : "Offline"}{p.id === playerId && room.status === "waiting" ? " • You can edit this name" : ""}
-                      </p>
+                {players.map((p) => (
+                  <div key={p.id} className="rounded-3xl border border-white/6 bg-[linear-gradient(135deg,rgba(17,24,39,0.9),rgba(26,16,44,0.82))] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        {p.id === playerId && room.status === "waiting" ? (
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <input
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                              maxLength={30}
+                              className="w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 px-3 py-2 text-sm font-semibold text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 sm:max-w-[220px]"
+                            />
+                            <Button
+                              onClick={handleSaveName}
+                              className="px-4 py-2 text-xs sm:text-sm"
+                              disabled={!editingName.trim() || editingName.trim() === p.name}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="break-words font-semibold text-white">{p.name}</p>
+                        )}
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                          p.isReady
+                            ? "bg-emerald-500/12 text-emerald-200"
+                            : "bg-amber-400/10 text-amber-200"
+                        }`}
+                      >
+                        {p.isReady ? "Ready" : "Waiting"}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {p.id === playerId && room.status === "waiting" && (
-                        <span className="rounded-full bg-fuchsia-500/12 px-3 py-1 text-xs font-semibold text-fuchsia-200">YOU</span>
-                      )}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       {p.id === room.hostId && (
-                        <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">HOST</span>
+                        <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">Host</span>
                       )}
+                      {p.id === playerId && room.status === "waiting" && (
+                        <span className="rounded-full bg-fuchsia-500/12 px-3 py-1 text-xs font-semibold text-fuchsia-200">You</span>
+                      )}
+                      {!p.online && (
+                        <span className="rounded-full bg-white/8 px-3 py-1 text-xs font-semibold text-zinc-400">Offline</span>
+                      )}
+                      {p.id === playerId && room.status === "waiting" ? (
+                        !p.isReady && (
+                          <Button
+                            onClick={handleReadyUp}
+                            className="px-4 py-2 text-xs sm:text-sm"
+                          >
+                            Ready Up
+                          </Button>
+                        )
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -353,28 +378,24 @@ function Lobby() {
             </Card>
 
             <Card className="border border-cyan-300/14 bg-slate-950/78 p-5 sm:p-6">
-              <div className="mb-4">
-                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Invite Players</p>
-                <p className="text-zinc-400 text-sm mt-1">Share this link to join directly.</p>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Invite</p>
+                <Button
+                  onClick={() => {
+                    navigator.clipboard.writeText(inviteLink);
+                    alert("Link copied to clipboard!");
+                  }}
+                  className="px-4 py-2 text-xs sm:text-sm"
+                >
+                  Copy Link
+                </Button>
               </div>
               <div className="rounded-3xl border border-cyan-300/12 bg-slate-950/82 p-4 mb-4">
-                <p className="text-xs text-zinc-500 mb-2">Invite link</p>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    readOnly
-                    value={`${window.location.origin}/lobby/${room.roomId}`}
-                    className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white"
-                  />
-                  <Button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/lobby/${room.roomId}`);
-                      alert("Link copied to clipboard!");
-                    }}
-                    className="w-full px-5 sm:w-auto"
-                  >
-                    Copy
-                  </Button>
-                </div>
+                <input
+                  readOnly
+                  value={inviteLink}
+                  className="min-w-0 w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white"
+                />
               </div>
 
               {isWaiting && isHost && (
@@ -384,19 +405,19 @@ function Lobby() {
                     config: { numTraitors, hintTime, difficulty, use18Plus, anonymousVoting },
                   })}
                   className="w-full py-4"
+                  disabled={!allPlayersReady}
                 >
-                  Start Game
+                  {allPlayersReady ? "Start Game" : "Waiting For Everyone"}
                 </Button>
               )}
 
               {isWaiting && !isHost && (
                 <p className="text-sm text-zinc-500 text-center py-2">
-                  Waiting for the host to start the game...
+                  Waiting for start
                 </p>
               )}
             </Card>
           </div>
-
         </div>
       </div>
     </Layout>

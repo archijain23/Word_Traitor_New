@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
+import Modal from "../components/ui/Modal";
 import { emitReconnectPlayer, socket } from "../lib/socket";
 import {
   buildPlayerSession,
@@ -233,6 +234,59 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
   );
 }
 
+function SecretWordPanel({
+  word,
+  isVisible,
+  onToggle,
+  title = "Your Word",
+  compact = false,
+}) {
+  const displayWord = word ?? "...";
+
+  return (
+    <div className={compact ? "min-w-0" : ""}>
+      <p
+        className={
+          compact
+            ? "text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/75 sm:text-xs sm:tracking-[0.3em]"
+            : "text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400"
+        }
+      >
+        {title}
+      </p>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={isVisible}
+        aria-label={isVisible ? "Hide your secret word" : "Reveal your secret word"}
+        className={`mt-2 w-full rounded-[24px] border text-left transition ${
+          compact
+            ? "border-cyan-300/18 bg-cyan-400/8 px-4 py-3 hover:border-cyan-200/28 hover:bg-cyan-400/12"
+            : "border-white/10 bg-white/[0.03] px-5 py-5 hover:border-cyan-300/28 hover:bg-white/[0.05] sm:px-6"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div
+              className={`break-words font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 ${
+                compact ? "text-2xl sm:text-3xl" : "text-4xl drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] sm:text-5xl"
+              }`}
+            >
+              {isVisible ? displayWord : "Tap to reveal"}
+            </div>
+            <p className={`mt-2 text-zinc-400 ${compact ? "text-xs" : "text-sm"}`}>
+              {isVisible ? "Tap again to hide it before you pass the phone." : "Keep it hidden until the right player is holding the phone."}
+            </p>
+          </div>
+          <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:text-xs">
+            {isVisible ? "Hide" : "Reveal"}
+          </div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
 function Game() {
   const { roomId } = useParams();
   const playerId = getStoredPlayerId();
@@ -264,6 +318,8 @@ function Game() {
   const [resultStage, setResultStage] = useState("idle");
   const [impactFlash, setImpactFlash] = useState(null);
   const [phaseCue, setPhaseCue] = useState(null);
+  const [isWordVisible, setIsWordVisible] = useState(false);
+  const [showHostSettings, setShowHostSettings] = useState(false);
 
   const name = getStoredPlayerName();
   const navigate = useNavigate();
@@ -359,6 +415,10 @@ function Game() {
       window.clearTimeout(impactFlashTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setIsWordVisible(false);
+  }, [word, phase]);
 
   // ─── Word-assignment countdown ─────────────────────────────────────────────────
   useEffect(() => {
@@ -476,7 +536,17 @@ function Game() {
     };
 
     const handleReturnToLobby = ({ roomId: rid }) => {
+      setShowHostSettings(false);
       navigate(`/lobby/${rid}`, { state: { skipNamePrompt: true } });
+    };
+
+    const handleRemovedFromRoom = ({ roomId: removedRoomId }) => {
+      if (removedRoomId !== roomId) return;
+      setShowHostSettings(false);
+      clearRememberedRoom(roomId);
+      setSkipAutoReconnect();
+      alert("The host removed you from the room.");
+      navigate("/");
     };
 
     const handleError = () => {
@@ -489,6 +559,7 @@ function Game() {
     socket.on("STATE_SYNC", handleStateSync);
     socket.on("phase_changed", handlePhaseChanged);
     socket.on("return_to_lobby", handleReturnToLobby);
+    socket.on("removed_from_room", handleRemovedFromRoom);
     socket.on("game_over", () => {});
     socket.on("error", handleError);
 
@@ -497,6 +568,7 @@ function Game() {
       socket.off("STATE_SYNC", handleStateSync);
       socket.off("phase_changed", handlePhaseChanged);
       socket.off("return_to_lobby", handleReturnToLobby);
+      socket.off("removed_from_room", handleRemovedFromRoom);
       socket.off("game_over");
       socket.off("error", handleError);
     };
@@ -542,6 +614,7 @@ function Game() {
     : hintEntries.map(([pid, playerHint]) => ({ id: pid, playerId: pid, hint: playerHint, round: 1 }));
   const submittedCount = hintEntries.length;
   const totalActive = activePlayers.length;
+  const votedCount = Object.keys(room.hasVoted || {}).length;
   const hintTimedOut = hintCountdown <= 0 && phase === "hint_collection";
   const voteLines = voteSummary?.votes || [];
   const voteTotals = voteSummary?.totals || [];
@@ -642,14 +715,12 @@ function Game() {
     return (
       <Card className="p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/75 sm:text-xs sm:tracking-[0.3em]">
-              Your Word
-            </p>
-            <div className="mt-2 break-words text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 sm:text-3xl">
-              {word}
-            </div>
-          </div>
+          <SecretWordPanel
+            word={word}
+            isVisible={isWordVisible}
+            onToggle={() => setIsWordVisible((visible) => !visible)}
+            compact
+          />
           <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:text-xs">
             Keep this private
           </div>
@@ -735,9 +806,24 @@ function Game() {
                 <h1 className="mt-3 text-xl font-black text-white sm:text-4xl">Read the room. Catch the traitor.</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300/80">Watch the clues, trust your instincts, and vote before the bluff gets away.</p>
               </div>
-              <div className="w-full rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)] md:w-auto">
-                <div className="text-[10px] uppercase tracking-[0.14em] text-fuchsia-200/70 sm:text-[11px] sm:tracking-[0.32em]">Current Phase</div>
-                <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
+              <div className="flex items-start gap-3">
+                {isHost && (
+                  <button
+                    type="button"
+                    onClick={() => setShowHostSettings(true)}
+                    className="rounded-2xl border border-white/12 bg-white/6 p-3 text-zinc-200 transition hover:border-cyan-300/28 hover:text-white"
+                    aria-label="Open host settings"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="3.25" />
+                      <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.7-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.7 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .7.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.7Z" />
+                    </svg>
+                  </button>
+                )}
+                <div className="w-full rounded-[24px] border border-fuchsia-300/18 bg-fuchsia-500/8 px-5 py-4 text-sm text-zinc-200 shadow-[0_0_38px_rgba(217,70,239,0.12)] md:w-auto">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-fuchsia-200/70 sm:text-[11px] sm:tracking-[0.32em]">Current Phase</div>
+                  <div className="mt-2 text-lg font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
+                </div>
               </div>
             </div>
             <div className="sm:hidden">
@@ -751,6 +837,19 @@ function Game() {
                   <div className="mt-1 text-xs font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
                 </div>
               </div>
+              {isHost && (
+                <button
+                  type="button"
+                  onClick={() => setShowHostSettings(true)}
+                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/6 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-200 transition hover:border-cyan-300/28 hover:text-white"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3.25" />
+                    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.7-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.7 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .7.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.7Z" />
+                  </svg>
+                  Host settings
+                </button>
+              )}
               <p className="mt-3 text-xs leading-5 text-zinc-300/80">Everything for this phase is kept on this screen so players don&apos;t need to hunt by scrolling.</p>
             </div>
             {isSpectator && (
@@ -833,11 +932,13 @@ function Game() {
               ) : (
                 // Active players see their secret word and the memorise countdown.
                 <>
-                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400 mb-4">Your Secret Word</p>
                   <div className="mb-6">
-                    <span className="break-words text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] sm:text-5xl">
-                      {word ?? "..."}
-                    </span>
+                    <SecretWordPanel
+                      word={word}
+                      isVisible={isWordVisible}
+                      onToggle={() => setIsWordVisible((visible) => !visible)}
+                      title="Your Secret Word"
+                    />
                   </div>
                   <div className="flex items-center justify-center gap-4 mb-6">
                     <CountdownRing
@@ -995,8 +1096,34 @@ function Game() {
             <div className="space-y-4">
               <WordReminderCard />
               <Card className="p-4 sm:p-8">
-                <h2 className="mb-1 text-lg font-semibold">All Hints 🗾</h2>
-                <p className="mb-4 text-xs text-zinc-400 sm:text-sm">Read everyone&apos;s hints and vote for the traitor.</p>
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="mb-1 text-lg font-semibold">All Hints 🗾</h2>
+                    <p className="text-xs text-zinc-400 sm:text-sm">Read everyone&apos;s hints and vote for the traitor.</p>
+                  </div>
+                  <span className="w-fit text-xs font-semibold px-3 py-1 rounded-full bg-rose-400/10 border border-rose-300/20 text-rose-200">
+                    {votedCount} / {totalActive} voted
+                  </span>
+                </div>
+
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {activePlayers.map((p) => {
+                    const done = Boolean(room.hasVoted?.[p.id]);
+                    return (
+                      <div
+                        key={`vote-status-${p.id}`}
+                        title={p.name}
+                        className={`flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-300 ${
+                          done ? "border-rose-300/30 bg-rose-400/10 text-rose-200" : "border-white/10 bg-white/5 text-zinc-500"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-rose-300" : "bg-zinc-600"}`} />
+                        <span className="truncate">{p.name}{p.id === playerId ? " (you)" : ""}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="hidden sm:block">
                   <HintFeed showWaiting={false} />
                 </div>
@@ -1046,7 +1173,10 @@ function Game() {
                     >Submit Vote</Button>
                   </>
                 ) : (
-                  <p className="text-center text-green-400 mt-6">✅ Vote submitted! Waiting for others...</p>
+                  <div className="mt-6 flex items-center gap-2 justify-center rounded-2xl border border-green-400/20 bg-green-400/8 p-4">
+                    <span className="text-green-400 text-lg">✅</span>
+                    <p className="text-green-400 font-semibold text-sm">Vote submitted! Waiting for the rest of the room...</p>
+                  </div>
                 )}
               </Card>
             </div>
@@ -1220,6 +1350,65 @@ function Game() {
 
         </div>
       </Layout>
+
+      <Modal isOpen={showHostSettings} onClose={() => setShowHostSettings(false)}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/75 sm:text-xs sm:tracking-[0.3em]">Host Controls</p>
+            <h2 className="mt-2 text-2xl font-black text-white">Manage the room</h2>
+            <p className="mt-2 text-sm text-zinc-400">Remove players from the live room or end the current game and send everyone back to the lobby.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowHostSettings(false)}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:border-white/20 hover:text-white"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {Object.values(room.players).map((player) => (
+            <div
+              key={player.id}
+              className="flex flex-col gap-3 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-semibold text-white">
+                  {player.name}
+                  {player.id === playerId ? " (you)" : ""}
+                </div>
+                <div className="mt-1 text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                  {player.id === room.hostId ? "Host" : "Player"} • {player.online ? "Online" : "Offline"}{player.isEliminated ? " • Spectating" : ""}
+                </div>
+              </div>
+              {player.id !== room.hostId ? (
+                <Button
+                  className="w-full border-rose-300/18 bg-rose-500/12 text-rose-100 hover:border-rose-200/30 hover:bg-rose-500/18 sm:w-auto"
+                  onClick={() => socket.emit("host_remove_player", { roomId, targetPlayerId: player.id })}
+                >
+                  Remove
+                </Button>
+              ) : (
+                <span className="rounded-full border border-cyan-300/16 bg-cyan-400/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                  Host
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 rounded-[22px] border border-amber-300/14 bg-amber-400/8 px-4 py-4 text-sm text-amber-100">
+          If the removed player happens to be the traitor, the current game ends immediately and everyone returns to the lobby.
+        </div>
+
+        <Button
+          className="mt-5 w-full border-white/12 bg-white/6 text-white hover:border-white/20 hover:bg-white/10"
+          onClick={() => socket.emit("host_end_game", { roomId })}
+        >
+          End Game
+        </Button>
+      </Modal>
     </>
   );
 }

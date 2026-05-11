@@ -12,6 +12,7 @@ function createRoom(roomId, hostId, name, socketId, config = {}) {
         socketId,
         name,
         online: true,
+        isReady: false,
         isEliminated: false,
         lastSeen: Date.now(),
         authToken: config.authToken || null,
@@ -54,6 +55,7 @@ function joinRoom(roomId, playerId, socketId, name) {
     socketId,
     name,
     online: true,
+    isReady: existingPlayer?.isReady || false,
     isEliminated: existingPlayer?.isEliminated || false,
     lastSeen: Date.now(),
     authToken: existingPlayer?.authToken || null,
@@ -71,6 +73,44 @@ function getRoom(roomId) {
 function removePlayer(roomId, playerId) {
   const room = rooms[roomId];
   if (!room) return;
+
+  const selectedTargetId = room.voteSelections?.[playerId];
+  if (selectedTargetId && room.votes?.[selectedTargetId]) {
+    room.votes[selectedTargetId] -= 1;
+    if (room.votes[selectedTargetId] <= 0) delete room.votes[selectedTargetId];
+  }
+
+  if (room.voteSelections) delete room.voteSelections[playerId];
+  if (room.hasVoted) delete room.hasVoted[playerId];
+  if (room.hints) delete room.hints[playerId];
+  if (room.votes) delete room.votes[playerId];
+
+  if (Array.isArray(room.hintHistory)) {
+    room.hintHistory = room.hintHistory.filter((entry) => entry.playerId !== playerId);
+  }
+
+  if (Array.isArray(room.traitorIds)) {
+    room.traitorIds = room.traitorIds.filter((id) => id !== playerId);
+  }
+
+  if (room.traitorId === playerId) {
+    room.traitorId = room.traitorIds[0] || null;
+  }
+
+  if (room.revealedRoles) {
+    delete room.revealedRoles[playerId];
+  }
+
+  if (room.lastVoteSummary) {
+    room.lastVoteSummary = {
+      ...room.lastVoteSummary,
+      totals: (room.lastVoteSummary.totals || []).filter((entry) => entry.targetId !== playerId),
+      votes: (room.lastVoteSummary.votes || []).filter(
+        (entry) => entry.voterId !== playerId && entry.targetId !== playerId
+      ),
+    };
+  }
+
   delete room.players[playerId];
   if (Object.keys(room.players).length === 0) delete rooms[roomId];
 }
@@ -105,6 +145,13 @@ function updatePlayerName(roomId, playerId, name) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return null;
   room.players[playerId] = { ...room.players[playerId], name };
+  return room.players[playerId];
+}
+
+function setPlayerReadyState(roomId, playerId, isReady) {
+  const room = rooms[roomId];
+  if (!room || !room.players[playerId]) return null;
+  room.players[playerId] = { ...room.players[playerId], isReady: Boolean(isReady) };
   return room.players[playerId];
 }
 
@@ -147,6 +194,7 @@ function resetGame(roomId) {
 
   Object.values(room.players).forEach((player) => {
     player.isEliminated = false;
+    player.isReady = false;
     player.word = null;
   });
 
@@ -177,6 +225,7 @@ module.exports = {
   markPlayerEliminated,
   setPlayerAuthToken,
   updatePlayerName,
+  setPlayerReadyState,
   resetRound,
   resetGame,
 };
