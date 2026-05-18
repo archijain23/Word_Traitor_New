@@ -115,6 +115,12 @@ function removePlayer(roomId, playerId) {
   if (Object.keys(room.players).length === 0) delete rooms[roomId];
 }
 
+function deleteRoom(roomId) {
+  if (rooms[roomId]) {
+    delete rooms[roomId];
+  }
+}
+
 function markPlayerOffline(roomId, playerId) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return null;
@@ -219,6 +225,7 @@ module.exports = {
   joinRoom,
   getRoom,
   removePlayer,
+  deleteRoom,
   markPlayerOffline,
   addVote,
   addHint,

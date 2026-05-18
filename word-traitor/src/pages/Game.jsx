@@ -672,9 +672,9 @@ function Game() {
   );
 
   const renderCompactHintGrid = (emptyLabel = "Waiting for first hint...") => (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-1 gap-2">
       {hintFeedEntries.length === 0 ? (
-        <div className="col-span-2 rounded-2xl border border-dashed border-white/12 bg-white/4 px-3 py-4 text-center text-xs text-zinc-500">
+        <div className="rounded-2xl border border-dashed border-white/12 bg-white/4 px-3 py-4 text-center text-xs text-zinc-500">
           {emptyLabel}
         </div>
       ) : (
@@ -684,31 +684,25 @@ function Game() {
           return (
             <div
               key={`compact-${entry.id}`}
-              className={`rounded-2xl border px-3 py-2 ${
+              className={`rounded-2xl border px-3 py-3 ${
                 isMe
                   ? "border-fuchsia-300/25 bg-fuchsia-500/8"
                   : "border-white/8 bg-[linear-gradient(135deg,rgba(17,24,39,0.92),rgba(18,16,42,0.82))]"
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className={`text-[11px] font-bold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
-                  {player?.name || "Unknown"}{isMe ? " (you)" : ""}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className={`text-[11px] font-bold ${isMe ? "text-fuchsia-300" : "text-cyan-300"}`}>
+                    {player?.name || "Unknown"}{isMe ? " (you)" : ""}
+                  </div>
+                  <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                    R{entry.round}
+                  </div>
                 </div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-                  R{entry.round}
-                </div>
+                <p className="mt-1 text-sm leading-6 text-zinc-200 break-words">
+                  {entry.hint}
+                </p>
               </div>
-              <p
-                className="mt-1 text-xs leading-4 text-zinc-200"
-                style={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {entry.hint}
-              </p>
             </div>
           );
         })

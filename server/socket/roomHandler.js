@@ -3,6 +3,7 @@ const {
   joinRoom,
   getRoom,
   removePlayer,
+  deleteRoom,
   markPlayerOffline,
   addVote,
   addHint,
@@ -670,8 +671,22 @@ module.exports = (io, socket) => {
     if (!currentRoom || !currentPlayerId) return;
     const room = getRoom(currentRoom);
     if (!room) return;
+
     markPlayerOffline(currentRoom, currentPlayerId);
-    io.to(currentRoom).emit("PLAYER_DISCONNECTED", { playerId: currentPlayerId, room: buildPublicRoom(room) });
-    emitRoomUpdate(currentRoom, room);
+    const updatedRoom = getRoom(currentRoom);
+    if (!updatedRoom) return;
+
+    const anyPlayerOnline = Object.values(updatedRoom.players).some((player) => player.online);
+    if (!anyPlayerOnline) {
+      clearHintTimer(currentRoom);
+      deleteRoom(currentRoom);
+      return;
+    }
+
+    io.to(currentRoom).emit("PLAYER_DISCONNECTED", {
+      playerId: currentPlayerId,
+      room: buildPublicRoom(updatedRoom),
+    });
+    emitRoomUpdate(currentRoom, updatedRoom);
   });
 };
