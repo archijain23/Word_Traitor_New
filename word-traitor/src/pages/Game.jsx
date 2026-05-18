@@ -162,7 +162,7 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
 
   return (
     <div
-      className="sticky top-0 z-50 mb-4"
+      className="sticky top-[56px] z-50 mb-2 sm:top-[72px] sm:mb-4"
       style={{
         background: `linear-gradient(135deg,rgba(8,18,38,0.97),rgba(21,11,40,0.95))`,
         borderBottom: `1px solid ${borderColor}`,
@@ -171,11 +171,11 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2 sm:flex-nowrap">
+      <div className="flex items-center gap-2 px-3 py-2 sm:flex-nowrap sm:gap-3 sm:px-4">
 
         {/* Arc ring */}
-        <div className="relative shrink-0" style={{ width: 48, height: 48 }}>
-          <svg className="-rotate-90" width="48" height="48" viewBox="0 0 48 48">
+        <div className="relative shrink-0" style={{ width: 42, height: 42 }}>
+          <svg className="-rotate-90" width="42" height="42" viewBox="0 0 48 48">
             <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
             <circle
               cx="24" cy="24" r={r}
@@ -189,7 +189,7 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
             />
           </svg>
           <span
-            className="absolute inset-0 flex items-center justify-center text-sm font-black tabular-nums"
+            className="absolute inset-0 flex items-center justify-center text-xs font-black tabular-nums sm:text-sm"
             style={{ color: ringColor, transition: "color 0.3s" }}
           >
             {seconds}
@@ -198,14 +198,14 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
 
         {/* Label + progress bar */}
         <div className="flex-1 min-w-0">
-          <div className="mb-1 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+          <div className="mb-1 flex items-baseline justify-between gap-2">
             <span
-              className="text-xs font-bold uppercase tracking-widest"
+              className="text-[10px] font-bold uppercase tracking-[0.24em] sm:text-xs"
               style={{ color: ringColor, transition: "color 0.3s" }}
             >
               {seconds > 0 ? "Hint Phase" : "Time's Up!"}
             </span>
-            <span className="text-xs text-zinc-500 tabular-nums">
+            <span className="text-[10px] text-zinc-500 tabular-nums sm:text-xs">
               {submittedCount} / {totalActive} submitted
             </span>
           </div>
@@ -226,7 +226,7 @@ function HintTimerBar({ seconds, total, submittedCount, totalActive }) {
           className="shrink-0 text-right"
           style={{ color: ringColor, transition: "color 0.3s" }}
         >
-          <span className="text-lg font-black tabular-nums">{seconds}</span>
+          <span className="text-base font-black tabular-nums sm:text-lg">{seconds}</span>
           <span className="text-xs text-zinc-500 ml-0.5">s</span>
         </div>
       </div>
@@ -261,7 +261,7 @@ function SecretWordPanel({
         aria-label={isVisible ? "Hide your secret word" : "Reveal your secret word"}
         className={`mt-2 w-full rounded-[24px] border text-left transition ${
           compact
-            ? "border-cyan-300/18 bg-cyan-400/8 px-4 py-3 hover:border-cyan-200/28 hover:bg-cyan-400/12"
+            ? "border-cyan-300/18 bg-cyan-400/8 px-3 py-2.5 hover:border-cyan-200/28 hover:bg-cyan-400/12"
             : "border-white/10 bg-white/[0.03] px-5 py-5 hover:border-cyan-300/28 hover:bg-white/[0.05] sm:px-6"
         }`}
       >
@@ -269,16 +269,18 @@ function SecretWordPanel({
           <div className="min-w-0">
             <div
               className={`break-words font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 to-fuchsia-300 ${
-                compact ? "text-2xl sm:text-3xl" : "text-4xl drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] sm:text-5xl"
+                compact ? "text-xl sm:text-2xl" : "text-4xl drop-shadow-[0_0_22px_rgba(34,211,238,0.32)] sm:text-5xl"
               }`}
             >
               {isVisible ? displayWord : "Tap to reveal"}
             </div>
-            <p className={`mt-2 text-zinc-400 ${compact ? "text-xs" : "text-sm"}`}>
-              {isVisible ? "Tap again to hide it before you pass the phone." : "Keep it hidden until the right player is holding the phone."}
-            </p>
+            {!compact && (
+              <p className="mt-2 text-sm text-zinc-400">
+                {isVisible ? "Tap again to hide it before you pass the phone." : "Keep it hidden until the right player is holding the phone."}
+              </p>
+            )}
           </div>
-          <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:text-xs">
+          <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:px-3 sm:py-2 sm:text-xs">
             {isVisible ? "Hide" : "Reveal"}
           </div>
         </div>
@@ -417,12 +419,16 @@ function Game() {
   }, []);
 
   useEffect(() => {
+    // Reset the reveal state when the round context changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsWordVisible(false);
   }, [word, phase]);
 
   // ─── Word-assignment countdown ─────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== "word_assignment") return;
+    // This countdown must restart immediately when the assignment phase begins.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWordCountdown(WORD_ASSIGNMENT_SECONDS);
     const timer = setInterval(() => {
       setWordCountdown((prev) => {
@@ -620,9 +626,10 @@ function Game() {
   const voteTotals = voteSummary?.totals || [];
   const eliminatedPlayerName = room.players[eliminatedInfo?.playerId]?.name || "A player";
   const totalVotesCast = voteLines.length || voteTotals.reduce((sum, entry) => sum + entry.count, 0);
+  const phaseLabel = phase.replace(/_/g, " ");
 
   // ─── Live hint feed ───────────────────────────────────────────────────────────────
-  const HintFeed = ({ showWaiting = true }) => (
+  const renderHintFeed = (showWaiting = true) => (
     <div className="space-y-2">
       {hintFeedEntries.length === 0 && showWaiting && (
         <p className="text-center text-zinc-500 text-sm py-4">Waiting for first hint...</p>
@@ -664,7 +671,7 @@ function Game() {
     </div>
   );
 
-  const CompactHintGrid = ({ emptyLabel = "Waiting for first hint..." }) => (
+  const renderCompactHintGrid = (emptyLabel = "Waiting for first hint...") => (
     <div className="grid grid-cols-2 gap-2">
       {hintFeedEntries.length === 0 ? (
         <div className="col-span-2 rounded-2xl border border-dashed border-white/12 bg-white/4 px-3 py-4 text-center text-xs text-zinc-500">
@@ -709,11 +716,11 @@ function Game() {
     </div>
   );
 
-  const WordReminderCard = () => {
+  const renderWordReminderCard = () => {
     if (isSpectator || !word) return null;
 
     return (
-      <Card className="p-4 sm:p-5">
+      <Card className="p-3 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <SecretWordPanel
             word={word}
@@ -721,8 +728,8 @@ function Game() {
             onToggle={() => setIsWordVisible((visible) => !visible)}
             compact
           />
-          <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:text-xs">
-            Keep this private
+          <div className="shrink-0 rounded-2xl border border-cyan-300/18 bg-cyan-400/10 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-200 sm:px-3 sm:py-2 sm:text-xs">
+            Private
           </div>
         </div>
       </Card>
@@ -796,10 +803,10 @@ function Game() {
           />
         )}
 
-        <div className="space-y-3 overflow-x-hidden sm:space-y-6">
+        <div className="space-y-2 overflow-x-hidden sm:space-y-6">
 
           {/* Header */}
-          <div className="rounded-[24px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)] sm:rounded-[28px] sm:p-6">
+          <div className="rounded-[22px] border border-cyan-300/14 bg-[linear-gradient(135deg,rgba(8,18,38,0.96),rgba(21,11,40,0.92))] p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_26px_90px_-40px_rgba(34,211,238,0.4)] sm:rounded-[28px] sm:p-6">
             <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80 sm:text-xs sm:tracking-[0.35em]">Live Round</p>
@@ -829,12 +836,12 @@ function Game() {
             <div className="sm:hidden">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-200/75">Room</p>
-                  <h1 className="mt-1 break-all text-lg font-black text-cyan-200">{room.roomId}</h1>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-cyan-200/75">Room</p>
+                  <h1 className="mt-1 break-all text-base font-black text-cyan-200">{room.roomId}</h1>
                 </div>
                 <div className="rounded-2xl border border-fuchsia-300/18 bg-fuchsia-500/8 px-3 py-2 text-right">
-                  <div className="text-[9px] uppercase tracking-[0.22em] text-fuchsia-200/70">Phase</div>
-                  <div className="mt-1 text-xs font-black capitalize text-fuchsia-200">{phase.replace(/_/g, " ")}</div>
+                  <div className="text-[8px] uppercase tracking-[0.22em] text-fuchsia-200/70">Phase</div>
+                  <div className="mt-1 text-[11px] font-black capitalize text-fuchsia-200">{phaseLabel}</div>
                 </div>
               </div>
               {isHost && (
@@ -850,11 +857,10 @@ function Game() {
                   Host settings
                 </button>
               )}
-              <p className="mt-3 text-xs leading-5 text-zinc-300/80">Everything for this phase is kept on this screen so players don&apos;t need to hunt by scrolling.</p>
             </div>
             {isSpectator && (
-              <div className="mt-4 rounded-[24px] border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 sm:px-5 sm:py-4">
-                You were voted out. You are now spectating.
+              <div className="mt-3 rounded-[20px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 sm:mt-4 sm:rounded-[24px] sm:px-5 sm:py-4 sm:text-sm">
+                Spectating this round.
               </div>
             )}
           </div>
@@ -961,7 +967,6 @@ function Game() {
                       }}
                     />
                   </div>
-                  <p className="text-xs text-zinc-600 mt-3">The hint phase will begin automatically</p>
                 </>
               )}
             </Card>
@@ -969,216 +974,197 @@ function Game() {
 
           {/* 💡 HINT COLLECTION */}
           {phase === "hint_collection" && (
-            <div className="space-y-4 sm:space-y-4">
-              <WordReminderCard />
-              {/* Input card — no duplicate ring here, timer bar is always visible above */}
-              <Card className="p-4 sm:p-6">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 className="text-lg font-bold text-white">Give a Hint 💡</h2>
-                  <span className="w-fit text-xs font-semibold px-3 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300">
-                    {submittedCount} / {totalActive} submitted
-                  </span>
-                </div>
+            <div className="flex min-h-[calc(100dvh-11.25rem)] flex-col gap-2 overflow-hidden sm:min-h-0 sm:gap-4">
+              {renderWordReminderCard()}
+              <div className="grid flex-1 grid-cols-2 gap-2 overflow-hidden sm:grid-cols-[0.95fr_1.05fr] sm:gap-4">
+                <Card className="flex h-full min-h-0 flex-col p-3 sm:p-5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h2 className="text-sm font-bold text-white sm:text-base">Hint</h2>
+                    <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-semibold text-cyan-300 sm:px-3">
+                      {submittedCount} / {totalActive}
+                    </span>
+                  </div>
 
-                <p className="mb-4 text-xs text-zinc-400 sm:text-sm">Say something related to your word. Don&apos;t give it away!</p>
-
-                {isSpectator ? (
-                  <p className="text-center text-amber-300">Spectators cannot submit hints.</p>
-                ) : !submittedHint && !hintTimedOut ? (
-                  <>
-                    <input
-                      type="text"
-                      value={hint}
-                      onChange={(e) => setHint(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && hint.trim()) {
+                  {isSpectator ? (
+                    <div className="flex flex-1 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/8 p-3 text-center text-xs text-amber-100 sm:text-sm">
+                      Spectators can watch only.
+                    </div>
+                  ) : !submittedHint && !hintTimedOut ? (
+                    <div className="flex flex-1 flex-col gap-2">
+                      <input
+                        type="text"
+                        value={hint}
+                        onChange={(e) => setHint(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && hint.trim()) {
+                            primeAudioContext();
+                            playImpactCue("hint");
+                            pulseVibration(18);
+                            socket.emit("submit_hint", { roomId, hint: hint.trim() });
+                            setSubmittedHint(true);
+                          }
+                        }}
+                        placeholder="Type hint"
+                        className="w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 px-3 py-3 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 sm:p-4 sm:text-base"
+                        maxLength={100}
+                        autoFocus
+                      />
+                      <div className="flex-1 rounded-2xl border border-white/8 bg-white/4 p-3 text-[11px] leading-5 text-zinc-400 sm:text-xs">
+                        One clear clue. No giveaways.
+                      </div>
+                      <Button
+                        onClick={() => {
+                          if (!hint.trim()) return;
                           primeAudioContext();
                           playImpactCue("hint");
                           pulseVibration(18);
                           socket.emit("submit_hint", { roomId, hint: hint.trim() });
                           setSubmittedHint(true);
-                        }
-                      }}
-                      placeholder="Enter your hint..."
-                      className="mb-3 w-full rounded-2xl border border-cyan-300/16 bg-slate-950/78 p-3.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/25 sm:p-4 sm:text-base"
-                      maxLength={100}
-                      autoFocus
-                    />
-                    <Button
-                      onClick={() => {
-                        if (!hint.trim()) return;
-                        primeAudioContext();
-                        playImpactCue("hint");
-                        pulseVibration(18);
-                        socket.emit("submit_hint", { roomId, hint: hint.trim() });
-                        setSubmittedHint(true);
-                      }}
-                      className="w-full py-3 text-sm sm:text-base"
-                      disabled={!hint.trim()}
-                    >Submit Hint</Button>
-                  </>
-                ) : submittedHint ? (
-                  <div className="flex items-center gap-2 justify-center rounded-2xl border border-green-400/20 bg-green-400/8 p-4">
-                    <span className="text-green-400 text-lg">✅</span>
-                    <p className="text-green-400 font-semibold text-sm">Hint submitted! Watching others drop theirs...</p>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 justify-center rounded-2xl border border-amber-400/20 bg-amber-400/8 p-4">
-                    <span className="text-amber-400 text-lg">⏰</span>
-                    <p className="text-amber-400 font-semibold text-sm">Time&apos;s up! You didn&apos;t submit a hint this round.</p>
-                  </div>
-                )}
-              </Card>
+                        }}
+                        className="w-full py-3 text-sm sm:text-base"
+                        disabled={!hint.trim()}
+                      >Submit Hint</Button>
+                    </div>
+                  ) : submittedHint ? (
+                    <div className="flex flex-1 items-center justify-center rounded-2xl border border-green-400/20 bg-green-400/8 p-3 text-center">
+                      <p className="text-sm font-semibold text-green-400">Hint locked in.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/8 p-3 text-center">
+                      <p className="text-sm font-semibold text-amber-300">Round closed.</p>
+                    </div>
+                  )}
+                </Card>
 
-              {/* Live hint feed card */}
-              <Card className="hidden p-5 sm:block sm:p-6">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="flex items-center gap-2 text-base font-bold text-white min-w-0">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
+                <Card className="flex h-full min-h-0 flex-col p-3 sm:p-5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-white">Hints</h3>
+                    <span className="text-[10px] text-zinc-500 sm:text-xs">
+                      {totalActive - submittedCount > 0 ? `${totalActive - submittedCount} left` : "All in"}
                     </span>
-                    Live Hints
-                  </h3>
-                  <span className="text-xs text-zinc-500">
-                    {totalActive - submittedCount > 0 ? `Waiting for ${totalActive - submittedCount} more...` : "All hints in!"}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {activePlayers.map((p) => {
-                    const done = Boolean(hints[p.id]);
-                    return (
-                      <div
-                        key={p.id}
-                        title={p.name}
-                        className={`flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-300 ${
-                          done ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-white/10 bg-white/5 text-zinc-500"
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-cyan-400" : "bg-zinc-600"}`} />
-                        <span className="truncate">{p.name}{p.id === playerId ? " (you)" : ""}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <HintFeed showWaiting />
-              </Card>
-
-              <Card className="p-4 sm:hidden">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-bold text-white">Live Hints</h3>
-                  <span className="text-[11px] text-zinc-500">
-                    {totalActive - submittedCount > 0 ? `${totalActive - submittedCount} left` : "All in"}
-                  </span>
-                </div>
-                <div className="mb-3 flex flex-wrap gap-1.5">
-                  {activePlayers.map((p) => {
-                    const done = Boolean(hints[p.id]);
-                    return (
-                      <div
-                        key={`mobile-status-${p.id}`}
-                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-                          done ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-white/10 bg-white/5 text-zinc-500"
-                        }`}
-                      >
-                        {p.name}{p.id === playerId ? " (you)" : ""}
-                      </div>
-                    );
-                  })}
-                </div>
-                <CompactHintGrid />
-              </Card>
+                  </div>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {activePlayers.map((p) => {
+                      const done = Boolean(hints[p.id]);
+                      return (
+                        <div
+                          key={`mobile-status-${p.id}`}
+                          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                            done ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-white/10 bg-white/5 text-zinc-500"
+                          }`}
+                        >
+                          {p.name}{p.id === playerId ? " (you)" : ""}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                    <div className="hidden sm:block">
+                      {renderHintFeed()}
+                    </div>
+                    <div className="sm:hidden">
+                      {renderCompactHintGrid()}
+                    </div>
+                  </div>
+                </Card>
+              </div>
             </div>
           )}
 
           {/* 🗾 VOTING */}
           {phase === "voting" && (
-            <div className="space-y-4">
-              <WordReminderCard />
-              <Card className="p-4 sm:p-8">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="mb-1 text-lg font-semibold">All Hints 🗾</h2>
-                    <p className="text-xs text-zinc-400 sm:text-sm">Read everyone&apos;s hints and vote for the traitor.</p>
+            <div className="flex min-h-[calc(100dvh-11.25rem)] flex-col gap-2 overflow-hidden sm:min-h-0 sm:gap-4">
+              {renderWordReminderCard()}
+              <div className="grid flex-1 grid-cols-2 gap-2 overflow-hidden sm:grid-cols-[1.05fr_0.95fr] sm:gap-4">
+                <Card className="flex h-full min-h-0 flex-col p-3 sm:p-5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h2 className="text-sm font-semibold text-white sm:text-base">Hints</h2>
+                    <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-2 py-1 text-[10px] font-semibold text-rose-200 sm:px-3">
+                      {votedCount} / {totalActive}
+                    </span>
                   </div>
-                  <span className="w-fit text-xs font-semibold px-3 py-1 rounded-full bg-rose-400/10 border border-rose-300/20 text-rose-200">
-                    {votedCount} / {totalActive} voted
-                  </span>
-                </div>
-
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {activePlayers.map((p) => {
-                    const done = Boolean(room.hasVoted?.[p.id]);
-                    return (
-                      <div
-                        key={`vote-status-${p.id}`}
-                        title={p.name}
-                        className={`flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-300 ${
-                          done ? "border-rose-300/30 bg-rose-400/10 text-rose-200" : "border-white/10 bg-white/5 text-zinc-500"
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-rose-300" : "bg-zinc-600"}`} />
-                        <span className="truncate">{p.name}{p.id === playerId ? " (you)" : ""}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="hidden sm:block">
-                  <HintFeed showWaiting={false} />
-                </div>
-                <div className="sm:hidden">
-                  <CompactHintGrid emptyLabel="Waiting for hints..." />
-                </div>
-                {isSpectator ? (
-                  <p className="text-center text-amber-300 mt-6">Spectators cannot vote.</p>
-                ) : !hasVoted ? (
-                  <>
-                    <div className="mb-3 mt-4 border-t border-white/8 pt-4 sm:mt-6">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-200/75">Vote</div>
-                      <p className="mt-2 text-xs text-zinc-400 sm:text-sm">Choose the player you think is the traitor.</p>
-                    </div>
-                    <div className="grid gap-2 sm:space-y-2">
-                      {activePlayers.filter((p) => p.id !== playerId).map((p) => (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {activePlayers.map((p) => {
+                      const done = Boolean(room.hasVoted?.[p.id]);
+                      return (
                         <div
-                          key={p.id}
-                          onClick={() => setSelectedPlayer(p.id)}
-                          className={`flex flex-col gap-2 rounded-2xl border p-3 transition sm:p-4 sm:flex-row sm:items-center sm:justify-between ${
-                            selectedPlayer === p.id
-                              ? "border-rose-300/45 bg-rose-400/14 shadow-[0_0_28px_rgba(251,113,133,0.2)]"
-                              : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
+                          key={`vote-status-${p.id}`}
+                          title={p.name}
+                          className={`flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium border transition-all duration-300 ${
+                            done ? "border-rose-300/30 bg-rose-400/10 text-rose-200" : "border-white/10 bg-white/5 text-zinc-500"
                           }`}
                         >
-                          <span className="text-sm font-semibold text-white sm:text-base">{p.name}</span>
-                          <span className={`text-[10px] font-black uppercase tracking-[0.18em] sm:text-xs sm:tracking-[0.24em] ${
-                            selectedPlayer === p.id ? "text-rose-200" : "text-zinc-500"
-                          }`}>
-                            {selectedPlayer === p.id ? "Targeted" : "Tap to accuse"}
-                          </span>
+                          <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-rose-300" : "bg-zinc-600"}`} />
+                          <span className="truncate">{p.name}{p.id === playerId ? " (you)" : ""}</span>
                         </div>
-                      ))}
-                    </div>
-                    <Button
-                      className="mt-4 w-full py-3 text-sm sm:text-base"
-                      onClick={() => {
-                        if (!selectedPlayer) return;
-                        primeAudioContext();
-                        playImpactCue("vote");
-                        pulseVibration(24);
-                        socket.emit("vote_player", { roomId, targetId: selectedPlayer });
-                        setHasVoted(true);
-                        setSelectedPlayer(null);
-                      }}
-                      disabled={!selectedPlayer}
-                    >Submit Vote</Button>
-                  </>
-                ) : (
-                  <div className="mt-6 flex items-center gap-2 justify-center rounded-2xl border border-green-400/20 bg-green-400/8 p-4">
-                    <span className="text-green-400 text-lg">✅</span>
-                    <p className="text-green-400 font-semibold text-sm">Vote submitted! Waiting for the rest of the room...</p>
+                      );
+                    })}
                   </div>
-                )}
-              </Card>
+                  <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                    <div className="hidden sm:block">
+                      {renderHintFeed(false)}
+                    </div>
+                    <div className="sm:hidden">
+                      {renderCompactHintGrid("Waiting for hints...")}
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="flex h-full min-h-0 flex-col p-3 sm:p-5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-white">Vote</h3>
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-rose-200/75 sm:text-xs">Pick one</span>
+                  </div>
+                  {isSpectator ? (
+                    <div className="flex flex-1 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/8 p-3 text-center text-xs text-amber-100 sm:text-sm">
+                      Spectators can watch only.
+                    </div>
+                  ) : !hasVoted ? (
+                    <>
+                      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                        <div className="grid gap-2">
+                          {activePlayers.filter((p) => p.id !== playerId).map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setSelectedPlayer(p.id)}
+                              className={`flex w-full flex-col gap-1 rounded-2xl border p-3 text-left transition sm:p-4 ${
+                                selectedPlayer === p.id
+                                  ? "border-rose-300/45 bg-rose-400/14 shadow-[0_0_28px_rgba(251,113,133,0.2)]"
+                                  : "border-white/8 bg-slate-950/76 hover:border-cyan-300/25 hover:bg-cyan-400/8"
+                              }`}
+                            >
+                              <span className="text-sm font-semibold text-white">{p.name}</span>
+                              <span className={`text-[10px] font-black uppercase tracking-[0.18em] ${
+                                selectedPlayer === p.id ? "text-rose-200" : "text-zinc-500"
+                              }`}>
+                                {selectedPlayer === p.id ? "Selected" : "Tap"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <Button
+                        className="mt-2 w-full py-3 text-sm sm:text-base"
+                        onClick={() => {
+                          if (!selectedPlayer) return;
+                          primeAudioContext();
+                          playImpactCue("vote");
+                          pulseVibration(24);
+                          socket.emit("vote_player", { roomId, targetId: selectedPlayer });
+                          setHasVoted(true);
+                          setSelectedPlayer(null);
+                        }}
+                        disabled={!selectedPlayer}
+                      >Submit Vote</Button>
+                    </>
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center rounded-2xl border border-green-400/20 bg-green-400/8 p-3 text-center">
+                      <p className="text-sm font-semibold text-green-400">Vote locked in.</p>
+                    </div>
+                  )}
+                </Card>
+              </div>
             </div>
           )}
 

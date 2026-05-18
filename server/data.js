@@ -53,7 +53,8 @@ const adultMediumPairs = [
   ["Condom", "Birth Control"], ["Hangover", "Headache"], ["Seduction", "Flirting"],
   ["One Night Stand", "Blind Date"], ["Casino", "Arcade"], ["Threesome", "Couple"],
   ["Sex Tape", "Home Video"], ["BDSM", "Roleplay"], ["Orgasm", "Climax"],
-  ["Vibrator", "Massager"], ["Fetish", "Hobby"], ["Sexting", "Texting"],
+  ["Vibrator", "Massager"], ["Fetish", "Hobby"], ["Sexting", "Texting"],["horny", " happy"],["hard core","softcore"],["sperm","discharge"],
+  ["choke", "hold"],["lesbian","gay"],["penetration", "piercing"],["69","39"],["Lingerie", "Bikini"],["boobs","chest"]
 ];
 
 const adultHardPairs = [

@@ -145,6 +145,13 @@ function Lobby() {
     socket.emit("update_player_name", { roomId, name: nextName, authToken });
   };
 
+  const handleRemovePlayer = (targetPlayerId) => {
+    if (!isHost || !isWaiting) return;
+    if (confirm("Remove this player from the lobby?")) {
+      socket.emit("host_remove_player", { roomId, targetPlayerId });
+    }
+  };
+
   if (!room) {
     return (
       <Layout>
@@ -184,6 +191,15 @@ function Lobby() {
     });
   };
 
+  const emitRoomConfig = (nextConfig) => {
+    if (!authToken || !isHost || !isWaiting) return;
+    socket.emit("update_room_config", {
+      roomId,
+      authToken,
+      config: nextConfig,
+    });
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -202,107 +218,152 @@ function Lobby() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr]">
-          {isHost ? (
-            <Card className="p-5 sm:p-8">
-              <div className="mb-6">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Settings</p>
-                  <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Configure your lobby</h2>
-                </div>
+          <Card className="p-5 sm:p-8">
+            <div className="mb-6">
+              <div>
+                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Game Settings</p>
+                <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
+                  {isHost ? "Configure your lobby" : "Current lobby settings"}
+                </h2>
+                <p className="mt-2 text-sm text-zinc-400">
+                  {isHost
+                    ? "Everyone in the lobby can see changes live."
+                    : "The host controls these settings. Your view updates live."}
+                </p>
               </div>
+            </div>
 
-              <Button
-                onClick={handleBackToHome}
-                className="mb-5 w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
-              >
-                Leave Room
-              </Button>
-
-              <div className="grid gap-4">
-                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-                  <div>
-                    <p className="text-sm text-zinc-400">No. of Traitors</p>
-                    <p className="text-white font-semibold">Traitors</p>
-                  </div>
-                  <select value={numTraitors} onChange={(e) => setNumTraitors(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                  </select>
-                </div>
-
-                <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-                  <div>
-                    <p className="text-sm text-zinc-400">Hint Drop Time (sec)</p>
-                    <p className="text-white font-semibold">Hint timer</p>
-                  </div>
-                  <select value={hintTime} onChange={(e) => setHintTime(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
-                    <option value={15}>15</option>
-                    <option value={30}>30</option>
-                    <option value={45}>45</option>
-                    <option value={60}>60</option>
-                  </select>
-                </div>
-
-                <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-                  <div>
-                    <p className="text-sm text-zinc-400">Word Difficulty</p>
-                    <p className="text-white font-semibold">Difficulty</p>
-                  </div>
-                  <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white">
-                    <option value="Easy">Easy</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Hard">Hard</option>
-                  </select>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-                  <div>
-                    <p className="text-sm text-zinc-400">18+ Words</p>
-                    <p className="text-white font-semibold">Adult set</p>
-                  </div>
-                  <button type="button" onClick={() => setUse18Plus((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${use18Plus ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
-                    {use18Plus ? "On" : "Off"}
-                  </button>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-                  <div>
-                    <p className="text-sm text-zinc-400">Anonymous Voting</p>
-                    <p className="text-white font-semibold">Hide voter names</p>
-                  </div>
-                  <button type="button" onClick={() => setAnonymousVoting((prev) => !prev)} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition ${anonymousVoting ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}>
-                    {anonymousVoting ? "On" : "Off"}
-                  </button>
-                </div>
+            {!isHost && (
+              <div className="mb-5 rounded-2xl border border-cyan-300/14 bg-cyan-400/8 px-4 py-3 text-sm text-cyan-100">
+                Waiting for the host to finalize the room. Mark ready when you&apos;re set.
               </div>
-            </Card>
-          ) : (
-            <Card className="p-5 sm:p-8">
-              <div className="mb-6">
-                <p className="text-sm uppercase tracking-[0.3em] text-cyan-300 font-semibold">Waiting Room</p>
-                <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Waiting for the host</h2>
-                <p className="mt-2 text-sm text-zinc-400">Mark ready when you&apos;re set.</p>
+            )}
+
+            {me?.isReady ? (
+              <div className="mb-4 rounded-2xl border border-emerald-300/18 bg-emerald-500/12 px-4 py-3 text-center text-sm font-semibold text-emerald-100">
+                Ready locked
               </div>
-              {me?.isReady ? (
-                <div className="mb-4 rounded-2xl border border-emerald-300/18 bg-emerald-500/12 px-4 py-3 text-center text-sm font-semibold text-emerald-100">
-                  Ready locked
-                </div>
-              ) : (
+            ) : (
+              !isHost && (
                 <Button
                   onClick={handleReadyUp}
                   className="mb-4 w-full"
                 >
                   I&apos;m Ready
                 </Button>
-              )}
-              <Button
-                onClick={handleBackToHome}
-                className="w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
-              >
-                Leave Room
-              </Button>
-            </Card>
-          )}
+              )
+            )}
+
+            <Button
+              onClick={handleBackToHome}
+              className="mb-5 w-full border-white/12 bg-white/6 text-zinc-100 hover:border-white/25"
+            >
+              Leave Room
+            </Button>
+
+            <div className="grid gap-4">
+              <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div>
+                  <p className="text-sm text-zinc-400">No. of Traitors</p>
+                  <p className="text-white font-semibold">Traitors</p>
+                </div>
+                <select
+                  value={numTraitors}
+                  disabled={!isHost || !isWaiting}
+                  onChange={(e) => {
+                    const nextNumTraitors = Number(e.target.value);
+                    setNumTraitors(nextNumTraitors);
+                    emitRoomConfig({ numTraitors: nextNumTraitors, hintTime, difficulty, use18Plus, anonymousVoting });
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                </select>
+              </div>
+
+              <div className="grid sm:grid-cols-[1fr_120px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div>
+                  <p className="text-sm text-zinc-400">Hint Drop Time (sec)</p>
+                  <p className="text-white font-semibold">Hint timer</p>
+                </div>
+                <select
+                  value={hintTime}
+                  disabled={!isHost || !isWaiting}
+                  onChange={(e) => {
+                    const nextHintTime = Number(e.target.value);
+                    setHintTime(nextHintTime);
+                    emitRoomConfig({ numTraitors, hintTime: nextHintTime, difficulty, use18Plus, anonymousVoting });
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <option value={15}>15</option>
+                  <option value={30}>30</option>
+                  <option value={45}>45</option>
+                  <option value={60}>60</option>
+                </select>
+              </div>
+
+              <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div>
+                  <p className="text-sm text-zinc-400">Word Difficulty</p>
+                  <p className="text-white font-semibold">Difficulty</p>
+                </div>
+                <select
+                  value={difficulty}
+                  disabled={!isHost || !isWaiting}
+                  onChange={(e) => {
+                    const nextDifficulty = e.target.value;
+                    setDifficulty(nextDifficulty);
+                    emitRoomConfig({ numTraitors, hintTime, difficulty: nextDifficulty, use18Plus, anonymousVoting });
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3 text-white disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div>
+                  <p className="text-sm text-zinc-400">18+ Words</p>
+                  <p className="text-white font-semibold">Adult set</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isHost || !isWaiting}
+                  onClick={() => {
+                    const nextUse18Plus = !use18Plus;
+                    setUse18Plus(nextUse18Plus);
+                    emitRoomConfig({ numTraitors, hintTime, difficulty, use18Plus: nextUse18Plus, anonymousVoting });
+                  }}
+                  className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${use18Plus ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}
+                >
+                  {use18Plus ? "On" : "Off"}
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[1fr_120px] items-center rounded-3xl border border-cyan-300/12 bg-slate-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div>
+                  <p className="text-sm text-zinc-400">Anonymous Voting</p>
+                  <p className="text-white font-semibold">Hide voter names</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isHost || !isWaiting}
+                  onClick={() => {
+                    const nextAnonymousVoting = !anonymousVoting;
+                    setAnonymousVoting(nextAnonymousVoting);
+                    emitRoomConfig({ numTraitors, hintTime, difficulty, use18Plus, anonymousVoting: nextAnonymousVoting });
+                  }}
+                  className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${anonymousVoting ? "bg-cyan-500 text-black" : "bg-zinc-900 text-zinc-300"}`}
+                >
+                  {anonymousVoting ? "On" : "Off"}
+                </button>
+              </div>
+            </div>
+          </Card>
 
           <div className="space-y-6">
             <Card className="border border-fuchsia-300/14 bg-slate-950/78 p-5 sm:p-6">
@@ -370,6 +431,13 @@ function Lobby() {
                             Ready Up
                           </Button>
                         )
+                      ) : isHost && isWaiting && p.id !== playerId ? (
+                        <Button
+                          onClick={() => handleRemovePlayer(p.id)}
+                          className="px-4 py-2 text-xs sm:text-sm border-red-500/30 bg-red-500/10 text-red-300 hover:border-red-500/50 hover:bg-red-500/20"
+                        >
+                          Remove
+                        </Button>
                       ) : null}
                     </div>
                   </div>

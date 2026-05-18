@@ -121,8 +121,8 @@ module.exports = (io, socket) => {
   // ─── PICK & ASSIGN WORDS ─────────────────────────────────────────────────────
   //
   // Uses room.usedPairIndexes (a Set) to avoid repeating any word pair within
-  // the same game session. When the entire pool has been used up it resets
-  // automatically so the game can keep going.
+  // the entire room session (across multiple games). When the entire pool has
+  // been exhausted, it resets automatically so the game can keep going.
   //
   const pickAndAssignWords = (roomId) => {
     const room = getRoom(roomId);
@@ -134,13 +134,13 @@ module.exports = (io, socket) => {
     if (!room.usedPairIndexes) room.usedPairIndexes = new Set();
 
     // If every pair in the current pool has been seen, reset so the game
-    // can continue — but it will still never repeat until forced.
+    // can continue — but it will still never repeat until all pairs are used
     if (room.usedPairIndexes.size >= pool.length) {
       room.usedPairIndexes.clear();
       console.log(`[words] roomId=${roomId} — pool exhausted, resetting used-pair tracker`);
     }
 
-    // Pick a random index that hasn't been used yet this game
+    // Pick a random index that hasn't been used yet in this room session
     let idx;
     do {
       idx = Math.floor(Math.random() * pool.length);
@@ -276,8 +276,10 @@ module.exports = (io, socket) => {
     }
     room.traitorId = room.traitorIds[0];
 
-    // Fresh used-pair tracker for this game session
-    room.usedPairIndexes = new Set();
+    // Initialize word tracking if it doesn't exist (persists across games in the room)
+    if (!room.usedPairIndexes) {
+      room.usedPairIndexes = new Set();
+    }
 
     // Pick & broadcast words (pool determined by 18+ flag)
     pickAndAssignWords(roomId);
@@ -405,6 +407,10 @@ module.exports = (io, socket) => {
     if (!existingRoom) { socket.emit("error", "Room not found"); return; }
     const existingPlayer = existingRoom.players[resolvedPlayerId];
     if (existingPlayer && existingPlayer.authToken !== authToken) { socket.emit("error", "Player session could not be verified"); return; }
+    if (!existingPlayer && existingRoom.currentPhase !== "waiting") {
+      socket.emit("error", "You can't join this room after the game has started");
+      return;
+    }
     const result = attachToRoom(roomId, resolvedPlayerId, socket.id, name, authToken);
     if (!result) { socket.emit("error", "Room not found"); return; }
     const { room, reconnected } = result;
@@ -494,6 +500,33 @@ module.exports = (io, socket) => {
     setPlayerReadyState(roomId, currentPlayerId, true);
     emitRoomUpdate(roomId, room);
     syncPlayerState(socket, room, currentPlayerId);
+  });
+
+  socket.on("update_room_config", ({ roomId, config, authToken }) => {
+    const room = getRoom(roomId);
+    if (!room || !config) return;
+    if (currentPlayerId !== room.hostId) {
+      socket.emit("error", "Only the host can change room settings");
+      return;
+    }
+    if (room.status !== "waiting") {
+      socket.emit("error", "Room settings can only be changed in the lobby");
+      return;
+    }
+    if (!isAuthorizedPlayer(room, currentPlayerId, authToken)) {
+      socket.emit("error", "Player session could not be verified");
+      return;
+    }
+
+    room.config = {
+      numTraitors: config.numTraitors ?? room.config.numTraitors ?? 1,
+      hintTime: config.hintTime ?? room.config.hintTime ?? 30,
+      difficulty: normalizeDifficulty(config.difficulty ?? room.config.difficulty),
+      use18Plus: config.use18Plus === true,
+      anonymousVoting: config.anonymousVoting === true,
+    };
+
+    emitRoomUpdate(roomId, room);
   });
 
   socket.on("start_game", ({ roomId, config }) => {
