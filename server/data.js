@@ -55,7 +55,7 @@ const adultMediumPairs = [
   ["Sex Tape", "Home Video"], ["BDSM", "Roleplay"], ["Orgasm", "Climax"],
   ["Vibrator", "Massager"], ["Fetish", "Hobby"], ["Sexting", "Texting"],["horny", " happy"],["hard core","softcore"],["sperm","discharge"],
   ["choke", "hold"],["lesbian","gay"],["penetration", "piercing"],["69","39"],["Lingerie", "Bikini"],["boobs","chest"],["pussy","cat"],["spank","slap"],["Cum","spit"],
-  ["stepmon","mom"],["French Kiss","smooch"],["HookUp","Hangout"], ["Dildo","Joystick"]
+  ["stepmon","mom"],["French Kiss","smooch"],["HookUp","Hangout"], ["Dildo","Joystick"],["Blowjob","Handjob"],["masturbate","Fingering"],["Sexy","Hot"]
 ];
 
 const adultHardPairs = [
